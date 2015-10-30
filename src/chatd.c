@@ -18,7 +18,9 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <glib.h>
+
 
 
 /* This can be used to build instances of GTree that index on
