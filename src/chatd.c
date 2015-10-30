@@ -73,6 +73,9 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 
 int main(int argc, char **argv)
 {
+    printf("Number of arguments %d\n", argc);
+    printf("Portnumber : %s\n", argv[0]);
+
     int sockfd;
     struct sockaddr_in server, client;
     char message[512];
@@ -93,7 +96,8 @@ int main(int argc, char **argv)
         ERR_print_errors_fp(stderr);
         exit(1);
     }
-
+    
+    SSL *ssl = SSL_new(ssl_ctx);
 
     /* Create and bind a TCP socket */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
