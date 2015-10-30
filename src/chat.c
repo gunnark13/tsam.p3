@@ -85,13 +85,12 @@ void getpasswd(const char *prompt, char *passwd, size_t size)
 
 
 /* If someone kills the client, it should still clean up the readline
-   library, otherwise the terminal is in a inconsistent state. We set
-   active to 0 to get out of the loop below. Also note that the select
-   call below may return with -1 and errno set to EINTR. Do not exit
-   select with this error. */
-		void
-sigint_handler(int signum)
-{
+ * library, otherwise the terminal is in a inconsistent state. We set
+ * active to 0 to get out of the loop below. Also note that the select
+ * call below may return with -1 and errno set to EINTR. Do not exit
+ * select with this error.
+ */
+void sigint_handler(int signum) {
 		active = 0;
 
 		/* We should not use printf inside of signal handlers, this is not
@@ -248,6 +247,7 @@ void readline_callback(char *line)
 		write(STDOUT_FILENO, buffer, strlen(buffer));
 		fsync(STDOUT_FILENO);
 }
+
 
 int main(int argc, char **argv)
 {
