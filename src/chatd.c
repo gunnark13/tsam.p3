@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 #include <glib.h>
 
 
@@ -47,9 +48,7 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 /* This function logs an activity to the log file.
  * <client> a struct which holds the ip and port number of the client
  * <user> the client user name
- * <log_info> the log message
- */
-void log_to_file(struct sockaddr_in client, char * user, char * log_info) 
+ * <log_info> the log message */ void log_to_file(struct sockaddr_in client, char * user, char * log_info) 
 {
     time_t now;
     time(&now);
@@ -75,6 +74,24 @@ int main(int argc, char **argv)
     int sockfd;
     struct sockaddr_in server, client;
     char message[512];
+
+    SSL_library_init(); /* load encryption & hash algorithms for SSL */                
+    SSL_load_error_strings(); /* load the error strings for good error reporting */
+    
+    SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
+    // Load certificate file into the structure 
+    if (SSL_CTX_use_certificate_file(ssl_ctx, "../fd.crt", SSL_FILETYPE_PEM) <= 0) {
+         printf("Error loading certificate file");
+         ERR_print_errors_fp(stderr);
+         exit(1);
+    }
+    // Load private key file into the structure
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, "../fd.key", SSL_FILETYPE_PEM <= 0)) {
+        printf("Error loading private key");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
 
     /* Create and bind a TCP socket */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
