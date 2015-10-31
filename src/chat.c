@@ -248,7 +248,8 @@ void readline_callback(char *line)
     }
     /* Sent the buffer to the server. */
     snprintf(buffer, 255, "Message: %s\n", line);
-    write(STDOUT_FILENO, buffer, strlen(buffer));
+    // write(STDOUT_FILENO, buffer, strlen(buffer));
+    SSL_write(server_ssl, buffer, strlen(buffer));
     fsync(STDOUT_FILENO);
 }
 
@@ -315,8 +316,8 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    SSL *ssl = SSL_new (ssl_ctx);
-    if ( !ssl ) {
+    server_ssl = SSL_new (ssl_ctx);
+    if ( !server_ssl ) {
         printf("Error : ssl_new\n");
         exit(1);
     }
@@ -325,7 +326,7 @@ int main(int argc, char **argv)
     printf("%d\n", j++);
 
     /* Use the socket for the SSL connection. */
-    SSL_set_fd(ssl, server_fd);
+    SSL_set_fd(server_ssl, server_fd);
 
     printf("%d\n", j++);
 
@@ -338,7 +339,7 @@ int main(int argc, char **argv)
      */
 
     /* Set up secure connection to the chatd server. */
-    err = SSL_connect(ssl);
+    err = SSL_connect(server_ssl);
     if ( err == -1 ) {
         printf("Error perform SSL Handshake on the SSL client");
         exit(1);
@@ -348,7 +349,7 @@ int main(int argc, char **argv)
     /* Read characters from the keyboard while waiting for input.
     */
     /* Get the server's certificate */
-    X509 *server_cert = SSL_get_peer_certificate (ssl);
+    X509 *server_cert = SSL_get_peer_certificate (server_ssl);
 
     if ( server_cert ) {
         printf ("Server certificate:\n");
@@ -374,6 +375,16 @@ int main(int argc, char **argv)
         printf("The SSL server does not have certificate.\n");
     }
     printf("%d\n", j++);
+
+    memset(&buf, 0, sizeof(buf));
+    err = SSL_read(server_ssl, buf, sizeof(buf) - 1);
+    if ( err == -1 ) {
+        printf("Error SSL_read\n");
+        exit(1);
+    }
+    
+    buf[err] = '\0';
+    printf("%s\n", buf);
 
     /* Read characters from the keyboard while waiting for input. */
     prompt = strdup("> ");
@@ -405,28 +416,23 @@ int main(int argc, char **argv)
             /* Whenever you print out a message, call this
                to reprint the current input line. */
             rl_redisplay();
-            printf("r == 0\n");
             continue;
         }
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             rl_callback_read_char();
-
-            printf("inside fd_isset\n");
-        }
+        } 
 
         /* Handle messages from the server here! */
-        printf("prompt : %s", prompt);
-
     }
     /* replace by code to shutdown the connection and exit
        the program. */
 
     /* Shutdown the client side of the SSL connection */
-    err = SSL_shutdown(ssl);
+    err = SSL_shutdown(server_ssl);
     /* Terminate communication on a socket */
     err = close(server_fd);
     /* Free the SSL structure */
-    SSL_free(ssl);
+    SSL_free(server_ssl);
     /* Free the SSL_CTX structure */
     SSL_CTX_free(ssl_ctx);
 }

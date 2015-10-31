@@ -1,3 +1,4 @@
 *.o
 /src/chat
 /src/chatd
+*.swp
