@@ -276,6 +276,10 @@ int main(int argc, char **argv)
      * a server side key data base can be used to authenticate the
      * client.
      */
+    SSL_CTX_use_certificate_file(ssl_ctx, "../fd.crt", SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(ssl_ctx, "../fd.key", SSL_FILETYPE_PEM);
+
+    server_ssl = SSL_new(ssl_ctx);
 
     if (!SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL)) {
        ERR_print_errors_fp(stderr);
@@ -301,7 +305,6 @@ int main(int argc, char **argv)
     server.sin_family      = AF_INET;
     server.sin_port        = htons(server_port);  /* Server Port number */
     server.sin_addr.s_addr = inet_addr("127.0.0.1"); /* Server IP */
-
     err = connect(server_fd, (struct sockaddr*) &server, sizeof(server));
     if ( err == -1 ) {
         printf("Error establishing a TCP/IP connection to the SSL client");
@@ -325,6 +328,9 @@ int main(int argc, char **argv)
      */
 
     /* Set up secure connection to the chatd server. */
+
+    /* Read characters from the keyboard while waiting for input.
+    */
     err = SSL_connect(server_ssl);
     if ( err == -1 ) {
         printf("Error perform SSL Handshake on the SSL client");
