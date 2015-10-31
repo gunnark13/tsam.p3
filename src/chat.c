@@ -256,14 +256,15 @@ void readline_callback(char *line)
 int main(int argc, char **argv)
 {
     printf("Number of parameters : %d\n", argc);
-    for (size_t i = 0; argv[i] != NULL; i++) {
-        printf("argv[%zu] : %s\n", i, argv[i]);
+    int i = 0;
+    for (; argv[i] != NULL; i++) {
+        printf("argv[%d] : %s\n", i, argv[i]);
     }
 
     int server_port = atoi(argv[2]);
     struct sockaddr_in server;
     char buf[4096];
-    
+
     int err;
 
     /* Initialize OpenSSL */
@@ -284,7 +285,7 @@ int main(int argc, char **argv)
 
 
     if ( !SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL) ) {
-       ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);
         exit(1);
     }
 
@@ -300,7 +301,7 @@ int main(int argc, char **argv)
         printf("Error setting up TCP socket");
         exit(1);
     }
-    
+
     printf("Server_fd : %d\n", server_fd);
     printf("Port : %d\n", server_port);
 
@@ -319,9 +320,15 @@ int main(int argc, char **argv)
         printf("Error : ssl_new\n");
         exit(1);
     }
+    
+    int j = 0;
+    printf("%d\n", j++);
 
     /* Use the socket for the SSL connection. */
-    SSL_set_fd(server_ssl, server_fd);
+    SSL_set_fd(ssl, server_fd);
+
+    printf("%d\n", j++);
+
 
     /* Now we can create BIOs and use them instead of the socket.
      * The BIO is responsible for maintaining the state of the
@@ -331,22 +338,21 @@ int main(int argc, char **argv)
      */
 
     /* Set up secure connection to the chatd server. */
-
-    /* Read characters from the keyboard while waiting for input.
-    */
-    err = SSL_connect(server_ssl);
+    err = SSL_connect(ssl);
     if ( err == -1 ) {
         printf("Error perform SSL Handshake on the SSL client");
         exit(1);
     }
 
-    printf ("SSL connection using %s\n", SSL_get_cipher (ssl));
+    printf("%d\n", j++);
+    /* Read characters from the keyboard while waiting for input.
+    */
     /* Get the server's certificate */
     X509 *server_cert = SSL_get_peer_certificate (ssl);
-    
+
     if ( server_cert ) {
         printf ("Server certificate:\n");
-        
+
         char *str = X509_NAME_oneline(X509_get_subject_name(server_cert),0,0);
         if ( !str ) {
             printf("get subject name");
@@ -367,10 +373,9 @@ int main(int argc, char **argv)
     } else {
         printf("The SSL server does not have certificate.\n");
     }
+    printf("%d\n", j++);
 
-
-    /* Read characters from the keyboard while waiting for input.
-     */
+    /* Read characters from the keyboard while waiting for input. */
     prompt = strdup("> ");
     rl_callback_handler_install(prompt, (rl_vcpfunc_t*) &readline_callback);
     while (active) {
@@ -400,10 +405,13 @@ int main(int argc, char **argv)
             /* Whenever you print out a message, call this
                to reprint the current input line. */
             rl_redisplay();
+            printf("r == 0\n");
             continue;
         }
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             rl_callback_read_char();
+
+            printf("inside fd_isset\n");
         }
 
         /* Handle messages from the server here! */

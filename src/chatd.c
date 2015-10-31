@@ -184,8 +184,6 @@ int main(int argc, char **argv)
                     ERR_print_errors_fp(stderr);
                     printf("SSL connectio failed. SS_accept()");
                 }
-
-                printf("SSL connection using %s\n", SSL_get_cipher (ssl));
                 
                 char buf [4096];
                 err = SSL_read(ssl, buf, sizeof(buf) -1);
