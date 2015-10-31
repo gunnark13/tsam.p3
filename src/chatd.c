@@ -60,6 +60,13 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
+{
+    printf("Test\n");
+    return TRUE;
+}
+
+
 /* This function logs an activity to the log file.
  * <client> a struct which holds the ip and port number of the client
  * <user> the client user name
@@ -152,6 +159,8 @@ int main(int argc, char **argv)
      */
     listen(sockfd, MAX_CLIENTS);
 
+    GTree *client_tree = g_tree_new(sockaddr_in_cmp);
+
     struct client_info clients[MAX_CLIENTS];
     int ci = 0; // client index
     for (; ci < MAX_CLIENTS; ci++) {
@@ -168,6 +177,9 @@ int main(int argc, char **argv)
         highestConnfd = sockfd;
         FD_SET(sockfd, &rfds);
         ci = 0; // client index
+        
+        g_tree_foreach(client_tree, set_highest_connfd, &highestConnfd);
+
         for (; ci < MAX_CLIENTS; ci++) {
             if (clients[ci].connfd > highestConnfd) {
                 highestConnfd = clients[ci].connfd; // Update highest connfd
@@ -225,6 +237,8 @@ int main(int argc, char **argv)
                             if ( err == -1 ) {
                                 printf("Error: SSL_write\n");
                             } else { 
+                                
+                                g_tree_insert(client_tree, &clients[ci].socket, &clients[ci]);
                                 char * log_info = "connected";
                                 log_to_file(client, NULL, log_info);
                             }
@@ -235,6 +249,7 @@ int main(int argc, char **argv)
                     }
                 }
             }
+
             ci = 0;
             for (; ci < MAX_CLIENTS; ci++) {
                 time_t now; 
@@ -259,7 +274,7 @@ int main(int argc, char **argv)
                     shutdown(clients[ci].connfd, SHUT_RDWR);
                     close(clients[ci].connfd);
                     clients[ci].connfd = -1;
-                    char * log_info = "disconnected";
+                    char * log_info = "disconnected, timed out";
                     log_to_file(clients[ci].socket, NULL, log_info);
 
                     err = SSL_shutdown(clients[ci].ssl);

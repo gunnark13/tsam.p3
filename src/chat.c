@@ -146,6 +146,8 @@ void readline_callback(char *line)
     }
     if ((strncmp("/bye", line, 4) == 0) ||
             (strncmp("/quit", line, 5) == 0)) {
+        
+
         rl_callback_handler_remove();
         active = 0;
         return;
