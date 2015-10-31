@@ -21,7 +21,8 @@
 #include <openssl/err.h>
 #include <glib.h>
 
-
+#define CERTIFICATE_FILE "fd.crt"
+#define PRIVATE_KEY_FILE "fd.key"
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
@@ -50,7 +51,9 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 /* This function logs an activity to the log file.
  * <client> a struct which holds the ip and port number of the client
  * <user> the client user name
- * <log_info> the log message */ void log_to_file(struct sockaddr_in client, char * user, char * log_info) 
+ * <log_info> the log message 
+ */ 
+void log_to_file(struct sockaddr_in client, char * user, char * log_info) 
 {
     time_t now;
     time(&now);
@@ -74,7 +77,8 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 int main(int argc, char **argv)
 {
     printf("Number of arguments %d\n", argc);
-    printf("Portnumber : %s\n", argv[0]);
+    printf("Portnumber : %s\n", argv[1]);
+    int myport = argv[1];
 
     int sockfd;
     struct sockaddr_in server, client;
@@ -84,35 +88,42 @@ int main(int argc, char **argv)
     SSL_load_error_strings(); /* load the error strings for good error reporting */
     
     SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
+
     // Load certificate file into the structure 
-    if (SSL_CTX_use_certificate_file(ssl_ctx, "../fd.crt", SSL_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
          printf("Error loading certificate file");
          ERR_print_errors_fp(stderr);
          exit(1);
     }
     // Load private key file into the structure
-    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, "../fd.key", SSL_FILETYPE_PEM <= 0)) {
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM <= 0)) {
         printf("Error loading private key");
         ERR_print_errors_fp(stderr);
         exit(1);
     }
     
     SSL *ssl = SSL_new(ssl_ctx);
+    if (!ssl) {
+        printf("Error initializing ssl");
+        exit(1);
+    }
 
     /* Create and bind a TCP socket */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     /* Network functions need arguments in network byte order instead of
        host byte order. The macros htonl, htons convert the values, */
     server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_port = htons(32000);
+    server.sin_port = htons(myport);
     bind(sockfd, (struct sockaddr *) &server, (socklen_t) sizeof(server));
 
     /* Before we can accept messages, we have to listen to the port. We allow one
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, 1);
+    
 
     for (;;) {
         fd_set rfds;
@@ -122,6 +133,9 @@ int main(int argc, char **argv)
         /* Check whether there is data on the socket fd. */
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
+        
+        // Set the socket into the SSL structure
+        SSL_set_fd(ssl, sockfd);
 
         /* Wait for five seconds. */
         tv.tv_sec = 5;
@@ -142,10 +156,29 @@ int main(int argc, char **argv)
             connfd = accept(sockfd, (struct sockaddr *) &client,
                     &len);
 
+            int err = SSL_accept(ssl);
+            if (err == -1) {
+                printf("Error initiate an SSL handshake\n");
+                exit(1);
+            }
+
+            err = SSL_connect(ssl);
+            if (err == -1) {
+                printf("Error completing the ssl connect\n");
+                exit(1);
+            }
+
+
             /* Receive one byte less than declared,
                because it will be zero-termianted
                below. */
             ssize_t n = read(connfd, message, sizeof(message) - 1);
+
+            char ssl_message[512];
+            memset(&ssl_message, 0, sizeof(ssl_message));
+            err = SSL_read(ssl, ssl_message, sizeof(ssl_message) - 1);
+
+            printf("ssl_message: %s\n", ssl_message);
 
             /* Send the message back. */
             write(connfd, message, (size_t) n);
