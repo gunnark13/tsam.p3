@@ -148,13 +148,11 @@ int main(int argc, char **argv)
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
 
-        // Set the socket into the SSL structure
-        SSL_set_fd(ssl, sockfd);
 
         /* Wait for five seconds. */
         tv.tv_sec = 5;
         tv.tv_usec = 0;
-        retval = select(sockfd + 1, &rfds, NULL, NULL, &tv);
+        retval = select(sockfd + 1, &rfds, (fd_set *) 0, (fd_set *) 0, &tv);
         printf("RETVAL : %d\n"); 
         if (retval == -1) {
             perror("select()");
@@ -172,7 +170,9 @@ int main(int argc, char **argv)
             printf("Connection from %lx, port %x\n", client.sin_addr.s_addr, 
                     client.sin_port);
 
-            int err = SSL_accept(ssl);
+            // Set the socket into the SSL structure
+            SSL_set_fd(ssl, connfd);
+
             if ( err == -1 ) {
                 ERR_print_errors_fp(stderr);
                 exit(1);

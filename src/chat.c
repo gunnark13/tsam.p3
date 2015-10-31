@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <termios.h>
 #include <signal.h>
+#include <arpa/inet.h>
 
 /* Secure socket layer headers */
 #include <openssl/crypto.h>
@@ -276,8 +277,6 @@ int main(int argc, char **argv)
      * a server side key data base can be used to authenticate the
      * client.
      */
-    SSL_CTX_use_certificate_file(ssl_ctx, "../fd.crt", SSL_FILETYPE_PEM);
-    SSL_CTX_use_PrivateKey_file(ssl_ctx, "../fd.key", SSL_FILETYPE_PEM);
 
     server_ssl = SSL_new(ssl_ctx);
 
@@ -293,7 +292,7 @@ int main(int argc, char **argv)
      * create here can be used in select calls, so do not forget
      * them.
      */
-    int server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if ( server_fd == -1 ) {
         printf("Error setting up TCP socket");
         exit(1);
