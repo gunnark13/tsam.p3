@@ -103,7 +103,7 @@ int main(int argc, char **argv)
         exit(1);
     }
     // Load private key file into the structure
-    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM <= 0)) {
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM) <= 0) {
         printf("Error loading private key");
         ERR_print_errors_fp(stderr);
         exit(1);
@@ -113,16 +113,6 @@ int main(int argc, char **argv)
         printf("Private key does not match the certificate public key\n");
         exit(1);
     }
-
-
-    if ( !SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL) ) {
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-
-    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
-    SSL_CTX_set_verify_depth(ssl_ctx, 1);
-
 
     /* Create and bind a TCP socket */
     sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
