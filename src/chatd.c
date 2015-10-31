@@ -80,9 +80,8 @@ int main(int argc, char **argv)
 {
     printf("Number of arguments %d\n", argc);
     printf("Portnumber : %s\n", argv[1]);
-    int myport = argv[1];
+    int my_port = atoi(argv[1]);
 
-    int sockfd;
     struct sockaddr_in server, client;
     char message[512];
 
@@ -90,7 +89,7 @@ int main(int argc, char **argv)
     SSL_load_error_strings(); /* load the error strings for good error reporting */
 
     SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
-    
+
     if ( !ssl_ctx ) {
         ERR_print_errors_fp(stderr);
         exit(1);
@@ -115,14 +114,21 @@ int main(int argc, char **argv)
     }
 
     /* Create and bind a TCP socket */
-    sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if ( sockfd == -1 ) {
+        printf("Error binding a tcp socket\n");
+        exit(1);
+    } 
+
+    printf("Sockfd : %d\n", sockfd);
+    printf("Port : %d\n", my_port);
 
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     /* Network functions need arguments in network byte order instead of
        host byte order. The macros htonl, htons convert the values, */
     server.sin_addr.s_addr = htonl(INADDR_ANY);
-    server.sin_port = htons(myport);
+    server.sin_port = htons(my_port);
     int err = bind(sockfd, (struct sockaddr *) &server, (socklen_t) sizeof(server));
     if ( err == -1 ) {
         printf("Error binding name to socket\n");
@@ -133,11 +139,6 @@ int main(int argc, char **argv)
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, 1);
-    SSL *ssl = SSL_new(ssl_ctx);
-    if ( !ssl ) {
-        printf("ERROR: SSL new\n");
-        exit(1);
-    }
 
     for (;;) {
         fd_set rfds;
@@ -148,18 +149,17 @@ int main(int argc, char **argv)
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
 
-
         /* Wait for five seconds. */
         tv.tv_sec = 5;
         tv.tv_usec = 0;
-        retval = select(sockfd + 1, &rfds, (fd_set *) 0, (fd_set *) 0, &tv);
-        printf("RETVAL : %d\n"); 
+        retval = select(sockfd + 1, &rfds, NULL, NULL, &tv);
+        printf("RETVAL : %d\n", retval); 
         if (retval == -1) {
             perror("select()");
         } else if (retval > 0) {
             /* Data is available, receive it. */
             assert(FD_ISSET(sockfd, &rfds));
-            
+
             /* Copy to len, since recvfrom may change it. */
             socklen_t len = (socklen_t) sizeof(client);
 
@@ -167,81 +167,67 @@ int main(int argc, char **argv)
             int connfd;
             connfd = accept(sockfd, (struct sockaddr *) &client, &len);
 
-            printf("Connection from %lx, port %x\n", client.sin_addr.s_addr, 
-                    client.sin_port);
+            printf("Connection from %s, port %d\n", 
+                    inet_ntoa(client.sin_addr), 
+                    ntohs(client.sin_port));
 
-            // Set the socket into the SSL structure
-            SSL_set_fd(ssl, connfd);
-
-            if ( err == -1 ) {
-                ERR_print_errors_fp(stderr);
-                exit(1);
-            }
-
-            printf("SSL connection using %s\n", SSL_get_cipher (ssl));
-
-            X509 *client_cert = SSL_get_peer_certificate(ssl);
-            if ( client_cert ) {
-                printf ("Client certificate:\n");
-                char * str = X509_NAME_oneline(X509_get_subject_name(client_cert), 0, 0);
-                if ( !str ) {
-                    printf("Error: get_subject_name\n");
-                    exit(1);
-                }
-                printf ("\t subject: %s\n", str);
-                free (str);
-                str = X509_NAME_oneline(X509_get_issuer_name(client_cert), 0, 0);
-                if ( str ) {
-                    printf("Error: get_issuer_name\n");
-                    exit(1);
-                }
-                printf ("\t issuer: %s\n", str);
-                free (str);
-                X509_free(client_cert);
+            SSL *ssl = SSL_new(ssl_ctx);
+            if ( !ssl ) {
+                printf("ERROR: SSL new\n");
             } else {
-                printf("The SSL client does not have certificate\n");
+
+                // Set the socket into the SSL structure
+                SSL_set_fd(ssl, connfd);
+
+                err = SSL_accept(ssl);
+                if ( err == -1 ) {
+                    ERR_print_errors_fp(stderr);
+                    printf("SSL connectio failed. SS_accept()");
+                }
+
+                printf("SSL connection using %s\n", SSL_get_cipher (ssl));
+                
+                char buf [4096];
+                err = SSL_read(ssl, buf, sizeof(buf) -1);
+                if ( err == -1 ) {
+                    printf("Error: SSL_read");
+                    exit(1);
+                }
+
+                printf ("Received %d chars:'%s'\n", err, buf);
+
+                char * server_message = "This message is from the SSL server";
+                err = SSL_write(ssl, server_message, strlen(server_message)); 
+                if ( err == -1 ) {
+                    printf("Error: SSL_write\n");
+                    exit(1);
+                }
+                /* Receive one byte less than declared,
+                   because it will be zero-termianted
+                   below. */
+                // ssize_t n = read(connfd, message, sizeof(message) - 1);
+
+                char ssl_message[512];
+                memset(&ssl_message, 0, sizeof(ssl_message));
+                err = SSL_read(ssl, ssl_message, sizeof(ssl_message) - 1);
+
+                printf("ssl_message: %s\n", ssl_message);
+
+                /* Send the message back. */
+                // write(connfd, message, (size_t) n);
+
+                /* We should close the connection. */
+                shutdown(connfd, SHUT_RDWR);
+                close(connfd);
+
+                /* Zero terminate the message, otherwise
+                   printf may access memory outside of the
+                   string. */
+                //  message[n] = '\0';
+                /* Print the message to stdout and flush. */
+                fprintf(stdout, "Received:\n%s\n", message);
+                fflush(stdout);
             }
-            
-            char buf [4096];
-            err = SSL_read(ssl, buf, sizeof(buf) -1);
-            if ( err == -1 ) {
-                printf("Error: SSL_read");
-                exit(1);
-            }
-
-            printf ("Received %d chars:'%s'\n", err, buf);
-
-            char * server_message = "This message is from the SSL server";
-            err = SSL_write(ssl, server_message, strlen(server_message)); 
-            if ( err == -1 ) {
-                printf("Error: SSL_write\n");
-                exit(1);
-            }
-            /* Receive one byte less than declared,
-               because it will be zero-termianted
-               below. */
-            // ssize_t n = read(connfd, message, sizeof(message) - 1);
-
-            char ssl_message[512];
-            memset(&ssl_message, 0, sizeof(ssl_message));
-            err = SSL_read(ssl, ssl_message, sizeof(ssl_message) - 1);
-
-            printf("ssl_message: %s\n", ssl_message);
-
-            /* Send the message back. */
-            // write(connfd, message, (size_t) n);
-
-            /* We should close the connection. */
-            shutdown(connfd, SHUT_RDWR);
-            close(connfd);
-
-            /* Zero terminate the message, otherwise
-               printf may access memory outside of the
-               string. */
-            //  message[n] = '\0';
-            /* Print the message to stdout and flush. */
-            fprintf(stdout, "Received:\n%s\n", message);
-            fflush(stdout);
         } else {
             fprintf(stdout, "No message in five seconds.\n");
             fflush(stdout);

@@ -257,7 +257,7 @@ int main(int argc, char **argv)
 {
     printf("Number of parameters : %d\n", argc);
     for (size_t i = 0; argv[i] != NULL; i++) {
-        printf("argv[%d] : %s\n", i, argv[i]);
+        printf("argv[%zu] : %s\n", i, argv[i]);
     }
 
     int server_port = atoi(argv[2]);
@@ -277,10 +277,13 @@ int main(int argc, char **argv)
      * a server side key data base can be used to authenticate the
      * client.
      */
+    if ( !ssl_ctx ) {
+        printf("Error ssl_ctx\n");
+        exit(1);
+    }
 
-    server_ssl = SSL_new(ssl_ctx);
 
-    if (!SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL)) {
+    if ( !SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL) ) {
        ERR_print_errors_fp(stderr);
         exit(1);
     }
@@ -292,13 +295,14 @@ int main(int argc, char **argv)
      * create here can be used in select calls, so do not forget
      * them.
      */
-    server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    server_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if ( server_fd == -1 ) {
         printf("Error setting up TCP socket");
         exit(1);
     }
     
-    printf("Server_fd : %d\n");
+    printf("Server_fd : %d\n", server_fd);
+    printf("Port : %d\n", server_port);
 
     memset(&server, '\0', sizeof(server));
     server.sin_family      = AF_INET;
@@ -412,7 +416,7 @@ int main(int argc, char **argv)
     /* Shutdown the client side of the SSL connection */
     err = SSL_shutdown(ssl);
     /* Terminate communication on a socket */
-    err = close(server_ssl);
+    err = close(server_fd);
     /* Free the SSL structure */
     SSL_free(ssl);
     /* Free the SSL_CTX structure */
