@@ -181,7 +181,6 @@ int main(int argc, char **argv)
         tv.tv_sec = 5;
         tv.tv_usec = 0;
         retval = select(highestConnfd + 1, &rfds, NULL, NULL, &tv);
-        printf("RETVAL : %d\n", retval); 
         if (retval == -1) {
             perror("select()");
         } else if (retval > 0) {
@@ -225,11 +224,10 @@ int main(int argc, char **argv)
                             err = SSL_write(ssl, server_message, strlen(server_message)); 
                             if ( err == -1 ) {
                                 printf("Error: SSL_write\n");
-                                exit(1);
+                            } else { 
+                                char * log_info = "connected";
+                                log_to_file(client, NULL, log_info);
                             }
-                        
-                            char * log_info = "connected";
-                            log_to_file(client, NULL, log_info);
                         } else {
                             shutdown(connfd, SHUT_RDWR);
                             close(connfd);
@@ -243,13 +241,18 @@ int main(int argc, char **argv)
                 if ( clients[ci].connfd != -1 && FD_ISSET(clients[ci].connfd, &rfds)) {
                     char buf [4096];
                     err = SSL_read(clients[ci].ssl, buf, sizeof(buf) -1);
-                    if ( err == -1 ) {
-                        printf("Error: SSL_read");
-                        exit(1);
+                    if ( err <= 0 ) {
+                        printf("Error: SSL_read, disconnecting client\n");
+                        close(clients[ci].connfd);
+                        SSL_free(clients[ci].ssl);
+                        clients[ci].connfd = -1;
+                        char * log_info = "disconnected";
+                        log_to_file(clients[ci].socket, NULL, log_info);
+                    } else {
+                        buf[err] = '\0';
+                        printf ("Received %d chars:'%s'\n", err, buf);
+                        clients[ci].time = time(&now);
                     }
-                    buf[err] = '\0';
-                    printf ("Received %d chars:'%s'\n", err, buf);
-                    clients[ci].time = time(&now);
                 }
                 int clientConnectionSec = (int) difftime(time(&now), clients[ci].time);
                 if ( clients[ci].connfd != -1 && clientConnectionSec >= 15 ) {
@@ -257,7 +260,7 @@ int main(int argc, char **argv)
                     close(clients[ci].connfd);
                     clients[ci].connfd = -1;
                     char * log_info = "disconnected";
-                    log_to_file(client, NULL, log_info);
+                    log_to_file(clients[ci].socket, NULL, log_info);
 
                     err = SSL_shutdown(clients[ci].ssl);
                     if ( err == -1 ) {
