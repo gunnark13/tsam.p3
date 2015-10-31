@@ -21,10 +21,20 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <glib.h>
+#include <time.h>
 
 #define CERTIFICATE_FILE "fd.crt"
 #define PRIVATE_KEY_FILE "fd.key"
-#define CA_PEM "ca.pem"
+
+#define MAX_CLIENTS 5 
+
+struct client_info {
+    int connfd;
+    time_t time;
+    struct sockaddr_in socket;
+    SSL *ssl;
+};
+
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
@@ -120,6 +130,7 @@ int main(int argc, char **argv)
         printf("Error binding a tcp socket\n");
         exit(1);
     } 
+    int highestConnfd = sockfd;
 
     printf("Sockfd : %d\n", sockfd);
     printf("Port : %d\n", my_port);
@@ -139,7 +150,13 @@ int main(int argc, char **argv)
     /* Before we can accept messages, we have to listen to the port. We allow one
      * 1 connection to queue for simplicity.
      */
-    listen(sockfd, 1);
+    listen(sockfd, MAX_CLIENTS);
+
+    struct client_info clients[MAX_CLIENTS];
+    int ci = 0; // client index
+    for (; ci < MAX_CLIENTS; ci++) {
+        clients[ci].connfd = -1; // initialize all clients as inactive
+    }
 
     for (;;) {
         fd_set rfds;
@@ -148,64 +165,107 @@ int main(int argc, char **argv)
 
         /* Check whether there is data on the socket fd. */
         FD_ZERO(&rfds);
+        highestConnfd = sockfd;
         FD_SET(sockfd, &rfds);
-
+        ci = 0; // client index
+        for (; ci < MAX_CLIENTS; ci++) {
+            if (clients[ci].connfd > highestConnfd) {
+                highestConnfd = clients[ci].connfd; // Update highest connfd
+            }
+            if (clients[ci].connfd != -1) {
+                FD_SET(clients[ci].connfd, &rfds);
+            }
+        }
+        
         /* Wait for five seconds. */
         tv.tv_sec = 5;
         tv.tv_usec = 0;
-        retval = select(sockfd + 1, &rfds, NULL, NULL, &tv);
+        retval = select(highestConnfd + 1, &rfds, NULL, NULL, &tv);
         printf("RETVAL : %d\n", retval); 
         if (retval == -1) {
             perror("select()");
         } else if (retval > 0) {
-            /* Data is available, receive it. */
-            assert(FD_ISSET(sockfd, &rfds));
+            
+            if ( FD_ISSET(sockfd, &rfds) ) {
+                /* Copy to len, since recvfrom may change it. */
+                socklen_t len = (socklen_t) sizeof(client);
+                /* For TCP connectios, we first have to accept. */
+                int connfd = accept(sockfd, (struct sockaddr *) &client, &len);
 
-            /* Copy to len, since recvfrom may change it. */
-            socklen_t len = (socklen_t) sizeof(client);
+                printf("Connection from %s, port %d\n", 
+                        inet_ntoa(client.sin_addr), 
+                        ntohs(client.sin_port));
 
-            /* For TCP connectios, we first have to accept. */
-            int connfd;
-            connfd = accept(sockfd, (struct sockaddr *) &client, &len);
-
-            printf("Connection from %s, port %d\n", 
-                    inet_ntoa(client.sin_addr), 
-                    ntohs(client.sin_port));
-
-            SSL *ssl = SSL_new(ssl_ctx);
-            if ( !ssl ) {
-                printf("ERROR: SSL new\n");
-            } else {
-                SSL_set_fd(ssl, connfd);
-                
-                err = SSL_accept(ssl);
-                if ( err == -1 ) {
-                    ERR_print_errors_fp(stderr);
-                    printf("SSL connectio failed. SS_accept()");
+                SSL *ssl = SSL_new(ssl_ctx);
+                if ( !ssl ) {
+                    printf("ERROR: SSL new\n");
                 } else {
-
-                    char * server_message = "Welcome";
-                    err = SSL_write(ssl, server_message, strlen(server_message)); 
+                    SSL_set_fd(ssl, connfd);
+                    
+                    err = SSL_accept(ssl);
                     if ( err == -1 ) {
-                        printf("Error: SSL_write\n");
-                        exit(1);
+                        ERR_print_errors_fp(stderr);
+                        printf("SSL connectio failed. SS_accept()");
+                    } else {
+                        int foundSpace = -1;
+                        ci = 0;
+                        for (; ci < MAX_CLIENTS; ci++) {
+                            if ( clients[ci].connfd == -1 ) {
+                                clients[ci].connfd = connfd;
+                                time_t now;
+                                clients[ci].time = time(&now);
+                                clients[ci].socket = client;
+                                clients[ci].ssl = ssl;
+                                foundSpace = ci;
+                                break;
+                            }
+                        }
+                        if ( foundSpace != -1 ) {
+                            char * server_message = "Welcome";
+                            err = SSL_write(ssl, server_message, strlen(server_message)); 
+                            if ( err == -1 ) {
+                                printf("Error: SSL_write\n");
+                                exit(1);
+                            }
+                        
+                            char * log_info = "connected";
+                            log_to_file(client, NULL, log_info);
+                        } else {
+                            shutdown(connfd, SHUT_RDWR);
+                            close(connfd);
+                        }
                     }
-
-                    char * log_info = "connected";
-                    log_to_file(client, NULL, log_info); 
-
+                }
+            }
+            ci = 0;
+            for (; ci < MAX_CLIENTS; ci++) {
+                time_t now; 
+                if ( clients[ci].connfd != -1 && FD_ISSET(clients[ci].connfd, &rfds)) {
                     char buf [4096];
-                    err = SSL_read(ssl, buf, sizeof(buf) -1);
+                    err = SSL_read(clients[ci].ssl, buf, sizeof(buf) -1);
                     if ( err == -1 ) {
                         printf("Error: SSL_read");
                         exit(1);
                     }
-
+                    buf[err] = '\0';
                     printf ("Received %d chars:'%s'\n", err, buf);
-                    
-                    /* We should close the connection. */
-                    shutdown(connfd, SHUT_RDWR);
-                    close(connfd);
+                    clients[ci].time = time(&now);
+                }
+                int clientConnectionSec = (int) difftime(time(&now), clients[ci].time);
+                if ( clients[ci].connfd != -1 && clientConnectionSec >= 15 ) {
+                    shutdown(clients[ci].connfd, SHUT_RDWR);
+                    close(clients[ci].connfd);
+                    clients[ci].connfd = -1;
+                    char * log_info = "disconnected";
+                    log_to_file(client, NULL, log_info);
+
+                    err = SSL_shutdown(clients[ci].ssl);
+                    if ( err == -1 ) {
+                        printf("Error : failed to shutdown\n");
+                    } else {
+                        close(clients[ci].connfd);
+                        SSL_free(clients[ci].ssl);
+                    }
                 }
             }
         } else {
