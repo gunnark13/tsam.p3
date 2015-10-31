@@ -17,12 +17,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <glib.h>
 
 #define CERTIFICATE_FILE "fd.crt"
 #define PRIVATE_KEY_FILE "fd.key"
+#define CA_PEM "ca.pem"
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
@@ -30,7 +32,7 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
-    
+
     /* If either of the pointers is NULL or the addresses
        belong to different families, we abort. */
     g_assert((_addr1 == NULL) || (_addr2 == NULL) ||
@@ -86,14 +88,19 @@ int main(int argc, char **argv)
 
     SSL_library_init(); /* load encryption & hash algorithms for SSL */                
     SSL_load_error_strings(); /* load the error strings for good error reporting */
-    
+
     SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
+    
+    if ( !ssl_ctx ) {
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
 
     // Load certificate file into the structure 
     if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
-         printf("Error loading certificate file");
-         ERR_print_errors_fp(stderr);
-         exit(1);
+        printf("Error loading certificate file");
+        ERR_print_errors_fp(stderr);
+        exit(1);
     }
     // Load private key file into the structure
     if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM <= 0)) {
@@ -101,15 +108,24 @@ int main(int argc, char **argv)
         ERR_print_errors_fp(stderr);
         exit(1);
     }
-    
-    SSL *ssl = SSL_new(ssl_ctx);
-    if (!ssl) {
-        printf("Error initializing ssl");
+
+    if ( !SSL_CTX_check_private_key(ssl_ctx) ) {
+        printf("Private key does not match the certificate public key\n");
         exit(1);
     }
 
+
+    if ( !SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL) ) {
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_verify_depth(ssl_ctx, 1);
+
+
     /* Create and bind a TCP socket */
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;
@@ -123,7 +139,11 @@ int main(int argc, char **argv)
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, 1);
-    
+    SSL *ssl = SSL_new(ssl_ctx);
+    if ( !ssl ) {
+        printf("ERROR: SSL new\n");
+        exit(1);
+    }
 
     for (;;) {
         fd_set rfds;
@@ -133,7 +153,7 @@ int main(int argc, char **argv)
         /* Check whether there is data on the socket fd. */
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
-        
+
         // Set the socket into the SSL structure
         SSL_set_fd(ssl, sockfd);
 
@@ -156,19 +176,56 @@ int main(int argc, char **argv)
             connfd = accept(sockfd, (struct sockaddr *) &client,
                     &len);
 
+            printf("Connection from %lx, port %x\n", client.sin_addr.s_addr, 
+                    client.sin_port);
+
+           
+
             int err = SSL_accept(ssl);
-            if (err == -1) {
-                printf("Error initiate an SSL handshake\n");
+            if ( err == -1 ) {
+                ERR_print_errors_fp(stderr);
                 exit(1);
             }
 
-            err = SSL_connect(ssl);
-            if (err == -1) {
-                printf("Error completing the ssl connect\n");
+            printf("SSL connection using %s\n", SSL_get_cipher (ssl));
+
+            X509 *client_cert = SSL_get_peer_certificate(ssl);
+            if ( client_cert ) {
+                printf ("Client certificate:\n");
+                char * str = X509_NAME_oneline(X509_get_subject_name(client_cert), 0, 0);
+                if ( !str ) {
+                    printf("Error: get_subject_name\n");
+                    exit(1);
+                }
+                printf ("\t subject: %s\n", str);
+                free (str);
+                str = X509_NAME_oneline(X509_get_issuer_name(client_cert), 0, 0);
+                if ( str ) {
+                    printf("Error: get_issuer_name\n");
+                    exit(1);
+                }
+                printf ("\t issuer: %s\n", str);
+                free (str);
+                X509_free(client_cert);
+            } else {
+                printf("The SSL client does not have certificate\n");
+            }
+            
+            char buf [4096];
+            err = SSL_read(ssl, buf, sizeof(buf) -1);
+            if ( err == -1 ) {
+                printf("Error: SSL_read");
                 exit(1);
             }
 
+            printf ("Received %d chars:'%s'\n", err, buf);
 
+            char * server_message = "This message is from the SSL server";
+            err = SSL_write(ssl, server_message, strlen(server_message)); 
+            if ( err == -1 ) {
+                printf("Error: SSL_write\n");
+                exit(1);
+            }
             /* Receive one byte less than declared,
                because it will be zero-termianted
                below. */
