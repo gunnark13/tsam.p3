@@ -21,6 +21,7 @@
 #include <signal.h>
 
 /* Secure socket layer headers */
+#include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
@@ -28,6 +29,9 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
+#define CERTIFICATE_FILE "fd.crt"
+#define PRIVATE_KEY_FILE "fd.key"
+#define CA_PEM "ca.pem"
 
 /* This variable is 1 while the client is active and becomes 0 after
    a quit command to terminate the client and to clean up the
@@ -98,7 +102,6 @@ void sigint_handler(int signum) {
     write(STDOUT_FILENO, "Terminated.\n", 12);
     fsync(STDOUT_FILENO);
 }
-
 
 /* The next two variables are used to access the encrypted stream to
  * the server. The socket file descriptor server_fd is provided for
@@ -251,13 +254,23 @@ void readline_callback(char *line)
 
 int main(int argc, char **argv)
 {
+    printf("Number of parameters : %d\n", argc);
+    for (size_t i = 0; argv[i] != NULL; i++) {
+        printf("argv[%d] : %s\n", i, argv[i]);
+    }
+
+    int server_port = argv[2];
+    struct sockaddr_in server_addr;
+    char buf[4096];
+    
+    int err;
+
     /* Initialize OpenSSL */
     SSL_library_init(); /* load encryption & hash algorithms for SSL */                
     SSL_load_error_strings(); /* load the error strings for good error reporting */
     SSL_CTX *ssl_ctx = SSL_CTX_new(TLSv1_client_method());
 
-    /* TODO:
-     * We may want to use a certificate file if we self sign the
+    /* We may want to use a certificate file if we self sign the
      * certificates using SSL_use_certificate_file(). If available,
      * a private key can be loaded using
      * SSL_CTX_use_PrivateKey_file(). The use of private keys with
@@ -269,11 +282,52 @@ int main(int argc, char **argv)
 
     server_ssl = SSL_new(ssl_ctx);
 
+    // Load certificate file into the SSL structure
+    if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
+        printf("Error loading the certificate file");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+    // Load the private key file to the SSL structure
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM) <= 0) {
+        printf("Error loading private key file");
+        ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    /* Check if the client certificate and private-key matches */
+    if (!SSL_CTX_check_private_key(ssl_ctx)) {
+        fprintf(stderr, "Private key does not match the certificate public key\n");
+        exit(1);
+    }
+
+    if (!SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL)) {
+       ERR_print_errors_fp(stderr);
+        exit(1);
+    }
+
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+    SSL_CTX_set_verify_depth(ssl_ctx, 1);
+
     /* Create and set up a listening socket. The sockets you
      * create here can be used in select calls, so do not forget
      * them.
      */
 
+    int server_fd = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP); 
+    memset(&server_addr, '\0', sizeof(server_addr));
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_port        = htons(server_port);  /* Server Port number */
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); /* Server IP */
+
+    err = connect(server_fd, (struct sockaddr*) &server_addr, sizeof(server_addr));
+    if ( err == -1 ) {
+        printf("Error establishing a TCP/IP connection to the SSL client");
+        exit(1);
+    }
+
+    SSL *ssl = SSL_new (ssl_ctx);
+    
     /* Use the socket for the SSL connection. */
     SSL_set_fd(server_ssl, server_fd);
 
@@ -288,6 +342,43 @@ int main(int argc, char **argv)
 
     /* Read characters from the keyboard while waiting for input.
     */
+    err = SSL_connect(server_ssl);
+    if ( err == -1 ) {
+        printf("Error perform SSL Handshake on the SSL client");
+        exit(1);
+    }
+
+    printf ("SSL connection using %s\n", SSL_get_cipher (ssl));
+    /* Get the server's certificate */
+    X509 *server_cert = SSL_get_peer_certificate (ssl);
+    
+    if ( server_cert ) {
+        printf ("Server certificate:\n");
+        
+        char *str = X509_NAME_oneline(X509_get_subject_name(server_cert),0,0);
+        if ( !str ) {
+            printf("get subject name");
+            exit(1);
+        }
+        printf ("\t subject: %s\n", str);
+        free (str);
+
+        str = X509_NAME_oneline(X509_get_issuer_name(server_cert),0,0);
+        if ( !str ) {
+            printf("get issuer name");
+            exit(1);
+        }
+        printf ("\t issuer: %s\n", str);
+        free(str);
+
+        X509_free (server_cert); 
+    } else {
+        printf("The SSL server does not have certificate.\n");
+    }
+
+
+    /* Read characters from the keyboard while waiting for input.
+     */
     prompt = strdup("> ");
     rl_callback_handler_install(prompt, (rl_vcpfunc_t*) &readline_callback);
     while (active) {
@@ -324,7 +415,18 @@ int main(int argc, char **argv)
         }
 
         /* Handle messages from the server here! */
+        printf("prompt : %s", prompt);
+
     }
     /* replace by code to shutdown the connection and exit
        the program. */
+
+    /* Shutdown the client side of the SSL connection */
+    err = SSL_shutdown(ssl);
+    /* Terminate communication on a socket */
+    err = close(server_ssl);
+    /* Free the SSL structure */
+    SSL_free(ssl);
+    /* Free the SSL_CTX structure */
+    SSL_CTX_free(ssl_ctx);
 }
