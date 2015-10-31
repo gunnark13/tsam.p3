@@ -123,7 +123,11 @@ int main(int argc, char **argv)
        host byte order. The macros htonl, htons convert the values, */
     server.sin_addr.s_addr = htonl(INADDR_ANY);
     server.sin_port = htons(myport);
-    bind(sockfd, (struct sockaddr *) &server, (socklen_t) sizeof(server));
+    int err = bind(sockfd, (struct sockaddr *) &server, (socklen_t) sizeof(server));
+    if ( err == -1 ) {
+        printf("Error binding name to socket\n");
+        exit(1);
+    }
 
     /* Before we can accept messages, we have to listen to the port. We allow one
      * 1 connection to queue for simplicity.
@@ -151,25 +155,22 @@ int main(int argc, char **argv)
         tv.tv_sec = 5;
         tv.tv_usec = 0;
         retval = select(sockfd + 1, &rfds, NULL, NULL, &tv);
-
+        printf("RETVAL : %d\n"); 
         if (retval == -1) {
             perror("select()");
         } else if (retval > 0) {
             /* Data is available, receive it. */
             assert(FD_ISSET(sockfd, &rfds));
-
+            
             /* Copy to len, since recvfrom may change it. */
             socklen_t len = (socklen_t) sizeof(client);
 
             /* For TCP connectios, we first have to accept. */
             int connfd;
-            connfd = accept(sockfd, (struct sockaddr *) &client,
-                    &len);
+            connfd = accept(sockfd, (struct sockaddr *) &client, &len);
 
             printf("Connection from %lx, port %x\n", client.sin_addr.s_addr, 
                     client.sin_port);
-
-           
 
             int err = SSL_accept(ssl);
             if ( err == -1 ) {
@@ -219,7 +220,7 @@ int main(int argc, char **argv)
             /* Receive one byte less than declared,
                because it will be zero-termianted
                below. */
-            ssize_t n = read(connfd, message, sizeof(message) - 1);
+            // ssize_t n = read(connfd, message, sizeof(message) - 1);
 
             char ssl_message[512];
             memset(&ssl_message, 0, sizeof(ssl_message));
@@ -228,7 +229,7 @@ int main(int argc, char **argv)
             printf("ssl_message: %s\n", ssl_message);
 
             /* Send the message back. */
-            write(connfd, message, (size_t) n);
+            // write(connfd, message, (size_t) n);
 
             /* We should close the connection. */
             shutdown(connfd, SHUT_RDWR);
@@ -237,7 +238,7 @@ int main(int argc, char **argv)
             /* Zero terminate the message, otherwise
                printf may access memory outside of the
                string. */
-            message[n] = '\0';
+            //  message[n] = '\0';
             /* Print the message to stdout and flush. */
             fprintf(stdout, "Received:\n%s\n", message);
             fflush(stdout);

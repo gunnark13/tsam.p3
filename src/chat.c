@@ -259,8 +259,8 @@ int main(int argc, char **argv)
         printf("argv[%d] : %s\n", i, argv[i]);
     }
 
-    int server_port = argv[2];
-    struct sockaddr_in server_addr;
+    int server_port = atoi(argv[2]);
+    struct sockaddr_in server;
     char buf[4096];
     
     int err;
@@ -268,8 +268,7 @@ int main(int argc, char **argv)
     /* Initialize OpenSSL */
     SSL_library_init(); /* load encryption & hash algorithms for SSL */                
     SSL_load_error_strings(); /* load the error strings for good error reporting */
-    SSL_CTX *ssl_ctx = SSL_CTX_new(TLSv1_client_method());
-
+    SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_client_method());
     /* We may want to use a certificate file if we self sign the
      * certificates using SSL_use_certificate_file(). If available,
      * a private key can be loaded using
@@ -277,25 +276,6 @@ int main(int argc, char **argv)
      * a server side key data base can be used to authenticate the
      * client.
      */
-
-    // Load certificate file into the SSL structure
-    if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
-        printf("Error loading the certificate file");
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-    // Load the private key file to the SSL structure
-    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM) <= 0) {
-        printf("Error loading private key file");
-        ERR_print_errors_fp(stderr);
-        exit(1);
-    }
-
-    /* Check if the client certificate and private-key matches */
-    if (!SSL_CTX_check_private_key(ssl_ctx)) {
-        fprintf(stderr, "Private key does not match the certificate public key\n");
-        exit(1);
-    }
 
     if (!SSL_CTX_load_verify_locations(ssl_ctx, CA_PEM, NULL)) {
        ERR_print_errors_fp(stderr);
@@ -309,20 +289,31 @@ int main(int argc, char **argv)
      * create here can be used in select calls, so do not forget
      * them.
      */
-    int server_fd = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP); 
-    memset(&server_addr, '\0', sizeof(server_addr));
-    server_addr.sin_family      = AF_INET;
-    server_addr.sin_port        = htons(server_port);  /* Server Port number */
-    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); /* Server IP */
+    int server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if ( server_fd == -1 ) {
+        printf("Error setting up TCP socket");
+        exit(1);
+    }
+    
+    printf("Server_fd : %d\n");
 
-    err = connect(server_fd, (struct sockaddr*) &server_addr, sizeof(server_addr));
+    memset(&server, '\0', sizeof(server));
+    server.sin_family      = AF_INET;
+    server.sin_port        = htons(server_port);  /* Server Port number */
+    server.sin_addr.s_addr = inet_addr("127.0.0.1"); /* Server IP */
+
+    err = connect(server_fd, (struct sockaddr*) &server, sizeof(server));
     if ( err == -1 ) {
         printf("Error establishing a TCP/IP connection to the SSL client");
         exit(1);
     }
 
     SSL *ssl = SSL_new (ssl_ctx);
-    
+    if ( !ssl ) {
+        printf("Error : ssl_new\n");
+        exit(1);
+    }
+
     /* Use the socket for the SSL connection. */
     SSL_set_fd(server_ssl, server_fd);
 
