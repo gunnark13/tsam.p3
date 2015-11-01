@@ -184,6 +184,12 @@ void join_chat_room(char * room_name, struct client_info * ci)
         return;
     } 
 
+    if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
+        struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp, ci->room);
+        if( old_room != NULL ){
+           old_room->users = g_list_remove(old_room->users, ci);
+        }
+    }
     ci->room = cr->name;
     if(g_list_find(cr->users, ci) == NULL){
         cr->users = g_list_append(cr->users, ci);
@@ -216,7 +222,7 @@ void check_command (char * buf, struct client_info * ci)
     if ( starts_with("/join", buf) == TRUE ) {
         int i = 5;
         while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-        join_chat_room(&buf[i], ci); 
+        join_chat_room(strdup(&buf[i]), ci); 
     }
 }
 
@@ -267,8 +273,6 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     }
     return FALSE;
 }
-
-
 
 int main(int argc, char **argv)
 {
