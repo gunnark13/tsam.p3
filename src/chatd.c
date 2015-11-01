@@ -72,18 +72,47 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
+{
+    const struct sockaddr_in *_addr1 = addr1;
+    const struct sockaddr_in *_addr2 = addr2;
+
+    /* If either of the pointers is NULL or the addresses
+       belong to different families, we abort. */
+    g_assert((_addr1 != NULL) && (_addr2 != NULL) &&
+            (_addr1->sin_family == _addr2->sin_family));
+
+    if (_addr1->sin_addr.s_addr > _addr2->sin_addr.s_addr) {
+        return -1;
+    } else if (_addr1->sin_addr.s_addr < _addr2->sin_addr.s_addr) {
+        return 1;
+    } else if (_addr1->sin_port > _addr2->sin_port) {
+        return -1;
+    } else if (_addr1->sin_port < _addr2->sin_port) {
+        return 1;
+    }
+    return 0;
+}
+
 int chat_room_cmp(const void * room_a, const void * room_b)
 {
     const char * a = room_a;
     const char * b = room_b;
+    return strcmp(a, b);
+}
 
-    int cmp = strcmp(a, b);
-    if ( cmp == -1 ) {
-        return 1;
-    } else if ( cmp == 1 ) {
+int chat_room_cmp_search(const void * room_a, const void * room_b)
+{
+    const char * a = room_a;
+    const char * b = room_b;
+    int cmp = g_strcmp0(a, b);
+    printf("a:'%s' | b:'%s'  ==> %d\n", a, b, cmp); 
+    if ( cmp == 0 ) {
+        return 0;
+    } else if ( cmp > 0 ) {
         return -1;
     } else {
-        return 0;
+        return 1;
     }
 }
 
@@ -174,7 +203,7 @@ gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
 
 void join_chat_room(char * room_name, struct client_info * ci)
 {
-    struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp, room_name);
+    struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, room_name);
     char buf[4096];
     memset(&buf, 0, sizeof(buf));
 
@@ -195,6 +224,22 @@ void join_chat_room(char * room_name, struct client_info * ci)
     SSL_write(ci->ssl, buf, strlen(buf));
 }
 
+void write_to_client(gpointer value, gpointer data) 
+{
+    const struct client_info * ci = value;
+    const char * message = data;
+    SSL_write(ci->ssl, message, strlen(message)); 
+}
+
+void broadcast(char * buf, struct client_info * ci)
+{
+    struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+    if ( cr != NULL ) {
+        printf("Broadcasting to %d users.\n", g_list_length(cr->users));
+        g_list_foreach(cr->users, write_to_client, buf);
+    }
+}
+
 void check_command (char * buf, struct client_info * ci)
 {
     // Get list of all users
@@ -203,6 +248,7 @@ void check_command (char * buf, struct client_info * ci)
         memset(&clients, 0, sizeof(clients));
         g_tree_foreach(client_tree, build_client_list, &clients);
         SSL_write(ci->ssl, clients, strlen(clients));
+        return;
     }
 
     if ( strcmp(buf, "/list\n") == 0 ) {
@@ -211,12 +257,17 @@ void check_command (char * buf, struct client_info * ci)
         memset(&chat_rooms, 0, sizeof(chat_rooms));
         g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
         SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
+        return;
     } 
 
     if ( starts_with("/join", buf) == TRUE ) {
         int i = 5;
         while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-        join_chat_room(&buf[i], ci); 
+        join_chat_room(g_strchomp(&buf[i]), ci); 
+        return;
+    }
+    if ( ci->room != NULL ) {
+        broadcast(buf, ci); // broadcast message to room
     }
 }
 
@@ -340,12 +391,15 @@ int main(int argc, char **argv)
     
     // Initilize rooms
     struct chat_room * room1 = g_new0(struct chat_room, 1);
-    room1->name = "room1";
+    room1->name = "blue";
     struct chat_room * room2 = g_new0(struct chat_room, 1);
-    room2->name = "room2";
+    room2->name = "red";
+    struct chat_room * room3 = g_new0(struct chat_room, 1);
+    room3->name = "green";
 
     g_tree_insert(chat_room_tree, room1->name, room1);
     g_tree_insert(chat_room_tree, room2->name, room2);
+    g_tree_insert(chat_room_tree, room3->name, room3);
 
     printf("Number of rooms : %d\n", g_tree_nnodes(chat_room_tree));
 

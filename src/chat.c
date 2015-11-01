@@ -196,7 +196,7 @@ void readline_callback(char *line)
         }
         /* Maybe update the prompt. */
         free(prompt);
-        prompt = NULL; /* What should the new prompt look like? */
+        prompt = "> "; /* What should the new prompt look like? */
         rl_set_prompt(prompt);
         return;
     }
@@ -451,6 +451,8 @@ int main(int argc, char **argv)
     buf[err] = '\0';
     printf("%s\n", buf);
 
+    listen(server_fd, 1);
+
     /* Read characters from the keyboard while waiting for input. */
     prompt = strdup("> ");
     rl_callback_handler_install(prompt, (rl_vcpfunc_t*) &readline_callback);
@@ -460,10 +462,17 @@ int main(int argc, char **argv)
 
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
+        FD_SET(server_fd, &rfds);
+
+        int highest_fd = server_fd;
+        if ( highest_fd < STDIN_FILENO ) {
+            highest_fd = STDIN_FILENO;
+        }
+
         timeout.tv_sec = 5;
         timeout.tv_usec = 0;
 
-        int r = select(STDIN_FILENO + 1, &rfds, NULL, NULL, &timeout);
+        int r = select(highest_fd + 1, &rfds, NULL, NULL, &timeout);
         if (r < 0) {
             if (errno == EINTR) {
                 /* This should either retry the call or
@@ -486,7 +495,16 @@ int main(int argc, char **argv)
         if (FD_ISSET(STDIN_FILENO, &rfds)) {
             rl_callback_read_char();
         } 
-
+        if ( FD_ISSET(server_fd, &rfds) ) {
+            memset(&buf, 0, sizeof(buf));
+            int err = SSL_read(server_ssl, buf, sizeof(buf));
+            if ( err == -1 ) {
+                printf("Error reading from server!\n"); 
+            } else {
+                buf[err] = '\0';
+                printf("%s\n", buf);
+            }
+        }
         /* Handle messages from the server here! */
     }
     /* replace by code to shutdown the connection and exit
