@@ -274,7 +274,7 @@ int main(int argc, char **argv)
     listen(sockfd, MAX_CLIENTS);
 
     client_tree = g_tree_new(sockaddr_in_cmp);
-
+    
     for (;;) {
         fd_set rfds;
         struct timeval tv;
