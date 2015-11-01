@@ -201,9 +201,10 @@ void readline_callback(char *line)
         if ( err == -1 ) {
             printf("Error getting chat rooms");
             return; 
+        } else {
+            chat_rooms[err] = '\0';
+            printf("Available rooms:\n%s\n", chat_rooms);
         }
-        chat_rooms[err] = '\0';
-        printf("%s\n", chat_rooms);
         return;
     }
     if (strncmp("/roll", line, 5) == 0) {
