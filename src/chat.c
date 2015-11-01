@@ -147,6 +147,7 @@ void readline_callback(char *line)
     if ((strncmp("/bye", line, 4) == 0) ||
             (strncmp("/quit", line, 5) == 0)) {
         
+        printf("Now exiting...\n");
 
         rl_callback_handler_remove();
         active = 0;
@@ -246,6 +247,23 @@ void readline_callback(char *line)
     }
     if (strncmp("/who", line, 4) == 0) {
         /* Query all available users */
+        snprintf(buffer, 255, "%s\n", line);
+        int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        if ( err == -1 ) {
+            printf("Error requesting for list\n");
+            return;
+        } 
+
+        char chat_rooms[4096];
+        err = SSL_read(server_ssl, chat_rooms, sizeof(chat_rooms));
+        if ( err == -1 ) {
+            printf("Error getting chat rooms");
+            return; 
+        }
+
+        chat_rooms[err] = '\0';
+
+        printf("%s\n", chat_rooms);
         return;
     }
     /* Sent the buffer to the server. */

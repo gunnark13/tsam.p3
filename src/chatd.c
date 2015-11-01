@@ -133,7 +133,12 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
-            ci->time = time(&now);        
+            ci->time = time(&now); 
+            
+            if ( strcmp(buf, "/who\n") == 0 ) {
+                printf("TODO: get list of users\n");
+            }
+
         }
     }
     return FALSE;
