@@ -190,6 +190,7 @@ void check_command (char * buf, struct client_info * ci)
     } 
     if ( starts_with("/join\n", buf) == TRUE ) {
         printf("TODO: Add the client to chat room with the name after the command /join\n");
+        
         //SSL_write(ci->ssl, clients, strlen(clients));
     }
 

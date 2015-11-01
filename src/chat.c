@@ -180,7 +180,20 @@ void readline_callback(char *line)
         char *chatroom = strdup(&(line[i]));
 
         /* Process and send this information to the server. */
-
+        snprintf(buffer, 255, "%s\n", line);
+        int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        if ( err == -1 ) {
+            printf("Error requesting joining room\n");
+        } else {
+            char response[4096];
+            err = SSL_read(server_ssl, response, sizeof(response));
+            if ( err == -1 ) {
+                printf("Error getting response.\n");
+            } else {
+                response[err] = '\0';
+                printf("%s\n", response);
+            }
+        }
         /* Maybe update the prompt. */
         free(prompt);
         prompt = NULL; /* What should the new prompt look like? */
