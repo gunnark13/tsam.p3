@@ -137,7 +137,13 @@ void check_command (char * buf, struct client_info * ci)
         memset(&clients, 0, sizeof(clients));
         g_tree_foreach(client_tree, build_client_list, &clients);
         SSL_write(ci->ssl, clients, strlen(clients));
-        printf("Clientlist: %s\n", clients);
+    }
+    if ( strcmp(buf, "/bye\n") == 0 ) {
+        printf("TODO: disconnect user\n");
+        char  clients[4096];
+        memset(&clients, 0, sizeof(clients));
+        g_tree_foreach(client_tree, build_client_list, &clients);
+        SSL_write(ci->ssl, clients, strlen(clients));
     }
 }
 
