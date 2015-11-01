@@ -62,7 +62,7 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
-/* This function is sets the highest_connfd varible (data) as the 
+/* This function sets the highest_connfd varible (data) as the 
  * value of the connfd.  
  */ 
 gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
@@ -114,6 +114,17 @@ void log_to_file(struct sockaddr_in client, char * user, char * log_info)
     }
 }
 
+/*This function finds all users and concatenates their info to the string data.*/
+gboolean build_client_list (gpointer key, gpointer value, gpointer data)
+{
+    UNUSED(key);
+    struct client_info * ci = value;
+    struct sockaddr_in socket = ci->socket;
+    strcat((char *) data, inet_ntoa(socket.sin_addr));
+    strcat((char *) data, "\n");
+    return FALSE;
+}
+
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -137,8 +148,12 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             
             if ( strcmp(buf, "/who\n") == 0 ) {
                 printf("TODO: get list of users\n");
+                char  clients[4096];
+                memset(&clients, 0, sizeof(clients));
+                g_tree_foreach(client_tree, build_client_list, &clients);
+                //SSL_write(data, users, strlen(clients));
+                printf("Clientlist: %s\n", clients);
             }
-
         }
     }
     return FALSE;
