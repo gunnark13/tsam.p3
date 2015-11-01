@@ -238,6 +238,22 @@ void readline_callback(char *line)
         getpasswd("Password: ", passwd, 48);
 
         /* Process and send this information to the server. */
+        printf("User: %s\nPassword: %s\n", new_user, passwd);
+        strcat(line, "\n/password ");
+        strcat(line, passwd);
+        strcat(line, "\n");
+
+        printf("Line:%s\n", line);
+
+        // TODO : fix 
+
+        // snprintf(buffer, 255, "%s\n", line);
+        // int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        // if ( err == -1 ) {
+        //    printf("Error requesting for list\n");
+        //    return;
+        // } 
+
 
         /* Maybe update the prompt. */
         free(prompt);
