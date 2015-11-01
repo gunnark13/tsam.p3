@@ -121,6 +121,10 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
     struct client_info * ci = value;
     struct sockaddr_in socket = ci->socket;
     strcat((char *) data, inet_ntoa(socket.sin_addr));
+    strcat((char *) data, ":");
+    char buffer[20];
+    sprintf(buffer, "%d", socket.sin_port);
+    strcat((char *) data, buffer);
     strcat((char *) data, "\n");
     return FALSE;
 }
@@ -145,13 +149,12 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
             ci->time = time(&now); 
-            
+
             if ( strcmp(buf, "/who\n") == 0 ) {
-                printf("TODO: get list of users\n");
-                char  clients[4096];
+                char clients[4096];
                 memset(&clients, 0, sizeof(clients));
                 g_tree_foreach(client_tree, build_client_list, &clients);
-                //SSL_write(data, users, strlen(clients));
+                SSL_write(ci->ssl, clients, strlen(clients));
                 printf("Clientlist: %s\n", clients);
             }
         }
@@ -168,6 +171,10 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     int client_connection_sec = (int) difftime(time(&now), ci->time);
     if ( client_connection_sec >= 15 ) {
         printf("Timout, client_port : %d\n", ci->socket.sin_port);
+        int err = SSL_shutdown(ci->ssl);
+        if (err == -1 ) {
+            printf("Error shuting down ssl!\n");
+        }
         close(ci->connfd);
         SSL_free(ci->ssl);
         char * log_info = "timed out.";
@@ -200,7 +207,7 @@ int main(int argc, char **argv)
     // Load certificate file into the structure 
     if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
         printf("Error loading certificate file");
-        ERR_print_errors_fp(stderr);
+            ERR_print_errors_fp(stderr);
         exit(1);
     }
     // Load private key file into the structure
@@ -254,13 +261,13 @@ int main(int argc, char **argv)
         FD_ZERO(&rfds);
         highestConnfd = sockfd;
         FD_SET(sockfd, &rfds);
-        
+
         g_tree_foreach(client_tree, set_highest_connfd, &highestConnfd);
 
         printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
-        
+
         g_tree_foreach(client_tree, set_file_descriptor, &rfds); 
-        
+
         /* Wait for five seconds. */
         tv.tv_sec = 5;
         tv.tv_usec = 0;
@@ -268,7 +275,7 @@ int main(int argc, char **argv)
         if (retval == -1) {
             perror("select()");
         } else if (retval > 0) {
-            
+
             if ( FD_ISSET(sockfd, &rfds) ) {
                 /* Copy to len, since recvfrom may change it. */
                 socklen_t len = (socklen_t) sizeof(client);
@@ -283,25 +290,26 @@ int main(int argc, char **argv)
                     printf("ERROR: SSL new\n");
                 } else {
                     SSL_set_fd(ssl, connfd);
-                    
+
                     err = SSL_accept(ssl);
                     if ( err == -1 ) {
                         ERR_print_errors_fp(stderr);
                         printf("SSL connectio failed. SS_accept()");
                     } else {
-                        struct client_info ci;
-                        ci.connfd = connfd;
+                        struct client_info *ci = g_new0(struct client_info, 1);
+                        ci->connfd = connfd;
                         time_t now;
-                        ci.time = time(&now);
-                        ci.socket = client;
-                        ci.ssl = ssl;
-                        
+                        ci->time = time(&now);
+                        ci->socket = client;
+                        ci->ssl = ssl;
+
                         char * server_message = "Welcome";
                         err = SSL_write(ssl, server_message, strlen(server_message)); 
                         if ( err == -1 ) {
                             printf("Error: SSL_write\n");
-                        } else { 
-                            g_tree_insert(client_tree, &ci.socket, &ci);
+                        } else {
+                            g_tree_insert(client_tree, &ci->socket, ci);
+                            printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
                             char * log_info = "connected";
                             log_to_file(client, NULL, log_info);
                         }
@@ -309,7 +317,7 @@ int main(int argc, char **argv)
                 }
             }
             g_tree_foreach(client_tree, read_from_client, &rfds);
-            g_tree_foreach(client_tree, timeout_client, &rfds);
+            // g_tree_foreach(client_tree, timeout_client, &rfds);
         } else {
             fprintf(stdout, "No message in five seconds.\n");
             fflush(stdout);
