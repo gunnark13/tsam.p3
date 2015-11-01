@@ -163,15 +163,39 @@ gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+void join_chat_room(char * room_name, struct client_info * ci)
+{
+    struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp, room_name);
+    char buf[4096];
+    memset(&buf, 0, sizeof(buf));
+
+    if ( cr == NULL ) {
+        strcat(buf, "Room not found.\n");
+        SSL_write(ci->ssl, buf, strlen(buf));
+        return;
+    } 
+
+    ci->room = cr->name;
+    if(g_list_find(cr->users, ci) == NULL){
+        cr->users = g_list_append(cr->users, ci);
+    }
+
+    strcat(buf, "Registered to room: ");
+    strcat(buf, cr->name);
+    strcat(buf, "\n");
+    SSL_write(ci->ssl, buf, strlen(buf));
+}
+
 void check_command (char * buf, struct client_info * ci)
 {
+    // Get list of all users
     if ( strcmp(buf, "/who\n") == 0 ) {
-        printf("TODO: get list of users\n");
         char  clients[4096];
         memset(&clients, 0, sizeof(clients));
         g_tree_foreach(client_tree, build_client_list, &clients);
         SSL_write(ci->ssl, clients, strlen(clients));
     }
+
     if ( strcmp(buf, "/list\n") == 0 ) {
         // List all available public chat rooms 
         char chat_rooms[4096];
@@ -179,11 +203,12 @@ void check_command (char * buf, struct client_info * ci)
         g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
         SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
     } 
-    if ( strcmp(buf, "/join\n") == 0 ) {
-        printf("TODO: Add the client to chat room with the name after the command /join\n");
-        //SSL_write(ci->ssl, clients, strlen(clients));
-    }
 
+    if ( strcmp(buf, "/join\n") == 0 ) {
+        int i = 5;
+        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+        join_chat_room(&buf[i], ci); 
+    }
 }
 
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
