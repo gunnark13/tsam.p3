@@ -138,13 +138,15 @@ void check_command (char * buf, struct client_info * ci)
         g_tree_foreach(client_tree, build_client_list, &clients);
         SSL_write(ci->ssl, clients, strlen(clients));
     }
-    if ( strcmp(buf, "/bye\n") == 0 ) {
-        printf("TODO: disconnect user\n");
-        char  clients[4096];
-        memset(&clients, 0, sizeof(clients));
-        g_tree_foreach(client_tree, build_client_list, &clients);
-        SSL_write(ci->ssl, clients, strlen(clients));
+    if ( strcmp(buf, "/list\n") == 0 ) {
+        printf("TODO: List all available public chat rooms\n");
+        //SSL_write(ci->ssl, clients, strlen(clients));
+    } 
+    if ( strcmp(buf, "/join\n") == 0 ) {
+        printf("TODO: Add the client to chat room with the name after the command /join\n");
+        //SSL_write(ci->ssl, clients, strlen(clients));
     }
+
 }
 
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
