@@ -30,8 +30,8 @@
 #define MAX_CLIENTS 5 
 
 struct client_info {
-    int connfd;
-    int 
+    int connfd; 
+    gboolean active; 
     time_t time;
     struct sockaddr_in socket;
     SSL *ssl;
@@ -44,7 +44,7 @@ struct chat_room {
     GList * users;
 };
 
-GTrre *chat_room_tree;
+GTree *chat_room_tree;
 GTree *client_tree;
 
 /* This can be used to build instances of GTree that index on
