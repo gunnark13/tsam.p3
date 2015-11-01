@@ -125,6 +125,18 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+void check_command (char * buf, struct client_info * ci)
+{
+    if ( strcmp(buf, "/who\n") == 0 ) {
+        printf("TODO: get list of users\n");
+        char  clients[4096];
+        memset(&clients, 0, sizeof(clients));
+        g_tree_foreach(client_tree, build_client_list, &clients);
+        SSL_write(ci, clients, strlen(clients));
+        printf("Clientlist: %s\n", clients);
+    }
+}
+
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -145,15 +157,7 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
             ci->time = time(&now); 
-            
-            if ( strcmp(buf, "/who\n") == 0 ) {
-                printf("TODO: get list of users\n");
-                char  clients[4096];
-                memset(&clients, 0, sizeof(clients));
-                g_tree_foreach(client_tree, build_client_list, &clients);
-                //SSL_write(data, users, strlen(clients));
-                printf("Clientlist: %s\n", clients);
-            }
+            check_command(buf, ci);
         }
     }
     return FALSE;
