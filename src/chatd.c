@@ -87,6 +87,15 @@ int chat_room_cmp(const void * room_a, const void * room_b)
     }
 }
 
+gboolean starts_with(const char * substring, const char * str)
+{
+    if(strncmp(str, substring, strlen(substring)) == 0) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+
 /* This function sets the highest_connfd varible (data) as the 
  * value of the connfd.  
  */ 
@@ -179,7 +188,7 @@ void check_command (char * buf, struct client_info * ci)
         g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
         SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
     } 
-    if ( strcmp(buf, "/join\n") == 0 ) {
+    if ( starts_with("/join\n", buf) == TRUE ) {
         printf("TODO: Add the client to chat room with the name after the command /join\n");
         //SSL_write(ci->ssl, clients, strlen(clients));
     }
