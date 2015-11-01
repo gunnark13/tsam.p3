@@ -72,6 +72,21 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+int chat_room_cmp(const void * room_a, const void * room_b)
+{
+    const char * a = room_a;
+    const char * b = room_b;
+
+    int cmp = strcmp(a, b);
+    if ( cmp == -1 ) {
+        return 1;
+    } else if ( cmp == 1 ) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
 /* This function sets the highest_connfd varible (data) as the 
  * value of the connfd.  
  */ 
@@ -139,6 +154,15 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
+{
+    UNUSED(key);
+    const struct chat_room * cr = value;
+    strcat((char *) data, cr->name);
+    strcat((char *) data, "\n");
+    return FALSE;
+}
+
 void check_command (char * buf, struct client_info * ci)
 {
     if ( strcmp(buf, "/who\n") == 0 ) {
@@ -149,8 +173,11 @@ void check_command (char * buf, struct client_info * ci)
         SSL_write(ci->ssl, clients, strlen(clients));
     }
     if ( strcmp(buf, "/list\n") == 0 ) {
-        printf("TODO: List all available public chat rooms\n");
-        //SSL_write(ci->ssl, clients, strlen(clients));
+        // List all available public chat rooms 
+        char chat_rooms[4096];
+        memset(&chat_rooms, 0, sizeof(chat_rooms));
+        g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
+        SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
     } 
     if ( strcmp(buf, "/join\n") == 0 ) {
         printf("TODO: Add the client to chat room with the name after the command /join\n");
@@ -275,6 +302,19 @@ int main(int argc, char **argv)
 
     client_tree = g_tree_new(sockaddr_in_cmp);
     
+    chat_room_tree = g_tree_new(chat_room_cmp);
+    
+    // Initilize rooms
+    struct chat_room * room1 = g_new0(struct chat_room, 1);
+    room1->name = "room1";
+    struct chat_room * room2 = g_new0(struct chat_room, 1);
+    room2->name = "room2";
+
+    g_tree_insert(chat_room_tree, room1->name, room1);
+    g_tree_insert(chat_room_tree, room2->name, room2);
+
+    printf("Number of rooms : %d\n", g_tree_nnodes(chat_room_tree));
+
     for (;;) {
         fd_set rfds;
         struct timeval tv;

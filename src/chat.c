@@ -189,6 +189,22 @@ void readline_callback(char *line)
     }
     if (strncmp("/list", line, 5) == 0) {
         /* Query all available chat rooms */
+        snprintf(buffer, 255, "%s\n", line);
+        int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        if ( err == -1 ) {
+            printf("Error requesting for list\n");
+            return;
+        } 
+
+        char chat_rooms[4096];
+        err = SSL_read(server_ssl, chat_rooms, sizeof(chat_rooms));
+        if ( err == -1 ) {
+            printf("Error getting chat rooms");
+            return; 
+        } else {
+            chat_rooms[err] = '\0';
+            printf("Available rooms:\n%s\n", chat_rooms);
+        }
         return;
     }
     if (strncmp("/roll", line, 5) == 0) {
@@ -266,14 +282,14 @@ void readline_callback(char *line)
         snprintf(buffer, 255, "%s\n", line);
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
         if ( err == -1 ) {
-            printf("Error requesting for list\n");
+            printf("Error requesting for users\n");
             return;
         } 
 
         char chat_rooms[4096];
         err = SSL_read(server_ssl, chat_rooms, sizeof(chat_rooms));
         if ( err == -1 ) {
-            printf("Error getting chat rooms");
+            printf("Error getting users");
             return; 
         }
 
