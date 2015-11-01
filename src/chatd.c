@@ -31,11 +31,20 @@
 
 struct client_info {
     int connfd;
+    int 
     time_t time;
     struct sockaddr_in socket;
     SSL *ssl;
+    char * username;
+    char * password;
 };
 
+struct chat_room {
+    char * name;
+    GList * users;
+};
+
+GTrre *chat_room_tree;
 GTree *client_tree;
 
 /* This can be used to build instances of GTree that index on
