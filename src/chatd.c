@@ -87,6 +87,15 @@ int chat_room_cmp(const void * room_a, const void * room_b)
     }
 }
 
+gboolean starts_with(const char * substring, const char * str)
+{
+    if(strncmp(str, substring, strlen(substring)) == 0) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+
 /* This function sets the highest_connfd varible (data) as the 
  * value of the connfd.  
  */ 
@@ -204,7 +213,7 @@ void check_command (char * buf, struct client_info * ci)
         SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
     } 
 
-    if ( strcmp(buf, "/join\n") == 0 ) {
+    if ( starts_with("/join", buf) == TRUE ) {
         int i = 5;
         while (buf[i] != '\0' && isspace(buf[i])) { i++; }
         join_chat_room(&buf[i], ci); 
