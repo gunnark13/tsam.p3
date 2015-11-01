@@ -37,6 +37,7 @@ struct client_info {
     SSL *ssl;
     char * username;
     char * password;
+    char * room;
 };
 
 struct chat_room {
