@@ -26,6 +26,7 @@
 #define CERTIFICATE_FILE "fd.crt"
 #define PRIVATE_KEY_FILE "fd.key"
 
+#define UNUSED(x) (void)(x)
 #define MAX_CLIENTS 5 
 
 struct client_info {
@@ -35,6 +36,7 @@ struct client_info {
     SSL *ssl;
 };
 
+GTree *client_tree;
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
@@ -45,8 +47,8 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
 
     /* If either of the pointers is NULL or the addresses
        belong to different families, we abort. */
-    g_assert((_addr1 == NULL) || (_addr2 == NULL) ||
-            (_addr1->sin_family != _addr2->sin_family));
+    g_assert((_addr1 != NULL) && (_addr2 != NULL) &&
+            (_addr1->sin_family == _addr2->sin_family));
 
     if (_addr1->sin_addr.s_addr < _addr2->sin_addr.s_addr) {
         return -1;
@@ -60,12 +62,29 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+/* This function is sets the highest_connfd varible (data) as the 
+ * value of the connfd.  
+ */ 
 gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
 {
-    printf("Test\n");
-    return TRUE;
+    UNUSED(key);
+    const struct client_info * _value = value;
+    int connfd = _value->connfd;
+    if ( connfd > * (int *)data ) {
+        *(int *)data = connfd;
+    }
+    return FALSE;
 }
 
+
+gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
+{
+    UNUSED(key);
+    const struct client_info * _value = value;
+    int connfd = _value->connfd;
+    FD_SET(connfd, (fd_set *)data);
+    return FALSE;
+}
 
 /* This function logs an activity to the log file.
  * <client> a struct which holds the ip and port number of the client
@@ -94,6 +113,51 @@ void log_to_file(struct sockaddr_in client, char * user, char * log_info)
         fclose(f);
     }
 }
+
+gboolean read_from_client(gpointer key, gpointer value, gpointer data)
+{
+    UNUSED(key);
+    struct client_info * ci = value;
+    int connfd = ci->connfd;
+    if ( FD_ISSET(connfd, (fd_set *)data) ) {
+        char buf[4096];
+        int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
+        if ( err <= 0 ) {
+            printf("Error: SSL_read, disconnecting client\n");
+            close(ci->connfd);
+            SSL_free(ci->ssl);
+            char * log_info = "disconnected";
+            log_to_file(ci->socket, NULL, log_info);
+            g_tree_remove(client_tree, key); 
+        } else {
+            buf[err] = '\0';
+            printf("Received %d chars:'%s'\n", err, buf);
+            time_t now;
+            ci->time = time(&now);        
+        }
+    }
+    return FALSE;
+}
+
+gboolean timeout_client(gpointer key, gpointer value, gpointer data)
+{
+    UNUSED(key);
+    UNUSED(data);
+    struct client_info * ci = value;
+    time_t now;
+    int client_connection_sec = (int) difftime(time(&now), ci->time);
+    if ( client_connection_sec >= 15 ) {
+        printf("Timout, client_port : %d\n", ci->socket.sin_port);
+        close(ci->connfd);
+        SSL_free(ci->ssl);
+        char * log_info = "timed out.";
+        log_to_file(ci->socket, NULL, log_info);
+        g_tree_remove(client_tree, key); 
+    }
+    return FALSE;
+}
+
+
 
 int main(int argc, char **argv)
 {
@@ -159,13 +223,7 @@ int main(int argc, char **argv)
      */
     listen(sockfd, MAX_CLIENTS);
 
-    GTree *client_tree = g_tree_new(sockaddr_in_cmp);
-
-    struct client_info clients[MAX_CLIENTS];
-    int ci = 0; // client index
-    for (; ci < MAX_CLIENTS; ci++) {
-        clients[ci].connfd = -1; // initialize all clients as inactive
-    }
+    client_tree = g_tree_new(sockaddr_in_cmp);
 
     for (;;) {
         fd_set rfds;
@@ -176,18 +234,12 @@ int main(int argc, char **argv)
         FD_ZERO(&rfds);
         highestConnfd = sockfd;
         FD_SET(sockfd, &rfds);
-        ci = 0; // client index
         
         g_tree_foreach(client_tree, set_highest_connfd, &highestConnfd);
 
-        for (; ci < MAX_CLIENTS; ci++) {
-            if (clients[ci].connfd > highestConnfd) {
-                highestConnfd = clients[ci].connfd; // Update highest connfd
-            }
-            if (clients[ci].connfd != -1) {
-                FD_SET(clients[ci].connfd, &rfds);
-            }
-        }
+        printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
+        
+        g_tree_foreach(client_tree, set_file_descriptor, &rfds); 
         
         /* Wait for five seconds. */
         tv.tv_sec = 5;
@@ -203,8 +255,7 @@ int main(int argc, char **argv)
                 /* For TCP connectios, we first have to accept. */
                 int connfd = accept(sockfd, (struct sockaddr *) &client, &len);
 
-                printf("Connection from %s, port %d\n", 
-                        inet_ntoa(client.sin_addr), 
+                printf("Connection from %s, port %d\n", inet_ntoa(client.sin_addr), 
                         ntohs(client.sin_port));
 
                 SSL *ssl = SSL_new(ssl_ctx);
@@ -218,74 +269,27 @@ int main(int argc, char **argv)
                         ERR_print_errors_fp(stderr);
                         printf("SSL connectio failed. SS_accept()");
                     } else {
-                        int foundSpace = -1;
-                        ci = 0;
-                        for (; ci < MAX_CLIENTS; ci++) {
-                            if ( clients[ci].connfd == -1 ) {
-                                clients[ci].connfd = connfd;
-                                time_t now;
-                                clients[ci].time = time(&now);
-                                clients[ci].socket = client;
-                                clients[ci].ssl = ssl;
-                                foundSpace = ci;
-                                break;
-                            }
-                        }
-                        if ( foundSpace != -1 ) {
-                            char * server_message = "Welcome";
-                            err = SSL_write(ssl, server_message, strlen(server_message)); 
-                            if ( err == -1 ) {
-                                printf("Error: SSL_write\n");
-                            } else { 
-                                
-                                g_tree_insert(client_tree, &clients[ci].socket, &clients[ci]);
-                                char * log_info = "connected";
-                                log_to_file(client, NULL, log_info);
-                            }
-                        } else {
-                            shutdown(connfd, SHUT_RDWR);
-                            close(connfd);
+                        struct client_info ci;
+                        ci.connfd = connfd;
+                        time_t now;
+                        ci.time = time(&now);
+                        ci.socket = client;
+                        ci.ssl = ssl;
+                        
+                        char * server_message = "Welcome";
+                        err = SSL_write(ssl, server_message, strlen(server_message)); 
+                        if ( err == -1 ) {
+                            printf("Error: SSL_write\n");
+                        } else { 
+                            g_tree_insert(client_tree, &ci.socket, &ci);
+                            char * log_info = "connected";
+                            log_to_file(client, NULL, log_info);
                         }
                     }
                 }
             }
-
-            ci = 0;
-            for (; ci < MAX_CLIENTS; ci++) {
-                time_t now; 
-                if ( clients[ci].connfd != -1 && FD_ISSET(clients[ci].connfd, &rfds)) {
-                    char buf [4096];
-                    err = SSL_read(clients[ci].ssl, buf, sizeof(buf) -1);
-                    if ( err <= 0 ) {
-                        printf("Error: SSL_read, disconnecting client\n");
-                        close(clients[ci].connfd);
-                        SSL_free(clients[ci].ssl);
-                        clients[ci].connfd = -1;
-                        char * log_info = "disconnected";
-                        log_to_file(clients[ci].socket, NULL, log_info);
-                    } else {
-                        buf[err] = '\0';
-                        printf ("Received %d chars:'%s'\n", err, buf);
-                        clients[ci].time = time(&now);
-                    }
-                }
-                int clientConnectionSec = (int) difftime(time(&now), clients[ci].time);
-                if ( clients[ci].connfd != -1 && clientConnectionSec >= 15 ) {
-                    shutdown(clients[ci].connfd, SHUT_RDWR);
-                    close(clients[ci].connfd);
-                    clients[ci].connfd = -1;
-                    char * log_info = "disconnected, timed out";
-                    log_to_file(clients[ci].socket, NULL, log_info);
-
-                    err = SSL_shutdown(clients[ci].ssl);
-                    if ( err == -1 ) {
-                        printf("Error : failed to shutdown\n");
-                    } else {
-                        close(clients[ci].connfd);
-                        SSL_free(clients[ci].ssl);
-                    }
-                }
-            }
+            g_tree_foreach(client_tree, read_from_client, &rfds);
+            g_tree_foreach(client_tree, timeout_client, &rfds);
         } else {
             fprintf(stdout, "No message in five seconds.\n");
             fflush(stdout);
