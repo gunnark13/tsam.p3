@@ -36,6 +36,7 @@ struct client_info {
     struct sockaddr_in socket;
     SSL *ssl;
     char * username;
+    char * nickname;
     char * password;
     char * room;
 };
@@ -257,6 +258,21 @@ void broadcast(char * buf, struct client_info * ci)
     }
 }
 
+
+/* This function changes the nick name for a given user. All nick names will have the 
+ * appended text '(nick)' to ensure that user names and nick names are not confused 
+ * together.
+ * @param nick      the new nick name 
+ * @param ci        the user requesting for the nick name
+ */ 
+void change_nick_name(char * nick, struct client_info * ci)
+{
+    char * nickappend = " (nick)";
+    strcat(ci->nickname, nick);
+    strcat(ci->nickname, nickappend);
+    printf("Nick name: %s\n", ci->nickname);
+}
+
 void check_command (char * buf, struct client_info * ci)
 {
     // Get list of all users
@@ -283,6 +299,14 @@ void check_command (char * buf, struct client_info * ci)
         join_chat_room(g_strchomp(&buf[i]), ci); 
         return;
     }
+
+    if ( starts_with("/nick", buf) == TRUE ) {
+        int i = 5;
+        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+        change_nick_name(g_strchomp(&buf[i]), ci);
+        return;
+    }
+
     if ( ci->room != NULL ) {
         broadcast(buf, ci); // broadcast message to room
     }
