@@ -160,10 +160,12 @@ gboolean starts_with(const char * substring, const char * str)
 gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
-    const struct client_info * _value = value;
-    int connfd = _value->connfd;
-    if ( connfd > * (int *)data ) {
-        *(int *)data = connfd;
+    const struct client_info * ci = value;
+    if ( ci->active == TRUE ) {
+        int connfd = ci->connfd;
+        if ( connfd > * (int *)data ) {
+            *(int *)data = connfd;
+        }
     }
     return FALSE;
 }
@@ -178,9 +180,11 @@ gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
 gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
-    const struct client_info * _value = value;
-    int connfd = _value->connfd;
-    FD_SET(connfd, (fd_set *)data);
+    const struct client_info * ci = value;
+    if ( ci->active == TRUE ) {
+        int connfd = ci->connfd;
+        FD_SET(connfd, (fd_set *)data);
+    }
     return FALSE;
 }
 
@@ -223,13 +227,15 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
     struct client_info * ci = value;
-    struct sockaddr_in socket = ci->socket;
-    strcat((char *) data, inet_ntoa(socket.sin_addr));
-    strcat((char *) data, ":");
-    char buffer[20];
-    sprintf(buffer, "%d", socket.sin_port);
-    strcat((char *) data, buffer);
-    strcat((char *) data, "\n");
+    if ( ci->active == TRUE ) {
+        struct sockaddr_in socket = ci->socket;
+        strcat((char *) data, inet_ntoa(socket.sin_addr));
+        strcat((char *) data, ":");
+        char buffer[20];
+        sprintf(buffer, "%d", socket.sin_port);
+        strcat((char *) data, buffer);
+        strcat((char *) data, "\n");
+    }
     return FALSE;
 }
 
@@ -270,7 +276,6 @@ void join_chat_room(char * room_name, struct client_info * ci)
 
     printf("cr->name: '%s'\n", cr->name);
     printf("ci->room: '%s'\n", ci->room);
-
     // Remove user from his old room
     if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
         // The client is already in a room, find that room "old_room".
@@ -332,7 +337,7 @@ gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
     if ( ci->username == NULL ) {
         return FALSE;
     }
-
+    printf("ci->user: '%s' | us->user : '%s' \n", ci->username->str, us->username->str);
     if ( g_strcmp0(ci->username->str, us->username->str) == 0 ) {
         us->key = key;
         return TRUE;
@@ -351,17 +356,21 @@ void handle_login(char * buf, struct client_info * ci)
     if ( !split_1[0] || !split_1[1] ) {
         return;
     }
-    
+    GString * username = g_string_new(g_strchomp(split_1[0]));
+    GString * password = g_string_new(g_strchomp(split_1[1]));
+
     struct username_search * us = g_new0(struct username_search, 1);
-    us->username = g_string_new(split_1[0]);
+    us->username = username;
+    printf("us->username->str : '%s'\n", us->username->str); 
     g_tree_foreach(client_tree, find_user_by_username, us);
-    
     if ( us->key != NULL ) {
         struct client_info * found_client = g_tree_search(client_tree, sockaddr_in_cmp_search,
                                                 us->key);
         if ( found_client ) {
             // Check if the password is not correct
-            if ( g_strcmp0(found_client->password->str, split_1[1]) != 0 ) {
+            if ( g_strcmp0(found_client->password->str, password->str) != 0 ) {
+                printf("InCorrect password\n");
+                printf("p: '%s' | q: '%s'\n", password->str, found_client->password->str);
                 GString * message = g_string_new(NULL);
                 ci->authentication_tries += 1;
                 // Log the attempt
@@ -369,6 +378,7 @@ void handle_login(char * buf, struct client_info * ci)
                 log_to_file(ci->socket, found_client->username->str, log_info->str);
                 
                 if ( ci->authentication_tries >= 3 ) {
+                    printf("To many login attempts\n");
                     message = g_string_append(message, "To many login attempts\n");
                     SSL_write(ci->ssl, message->str, message->len);
                     close(ci->connfd);
@@ -379,7 +389,9 @@ void handle_login(char * buf, struct client_info * ci)
                 return;
             }
             
+            printf("Correct password\n");
             if ( found_client->authenticated == TRUE ) {
+                printf("Already logged in from somewhere else.\n");
                 char * message = "Already logged in from somewhere else.\n";
                 SSL_write(ci->ssl, message, strlen(message));
                 return;
@@ -391,24 +403,23 @@ void handle_login(char * buf, struct client_info * ci)
             ci->password = found_client->password;
             printf("Username of new client %s", ci->username->str);
             ci->socket = found_client->socket;
-            
             // remove the old instance of the user
             g_tree_remove(client_tree, &found_client->socket);
-            
             // remove the old instance of the user from the room he/she
             // is in and insert the new instance.
             struct chat_room * room = g_tree_search(chat_room_tree, chat_room_cmp_search,
                                                     ci->room);
             if ( room != NULL ) {
+                printf("Switching rooms.\n");
                 room->users = g_list_remove(room->users, found_client);
                 room->users = g_list_append(room->users, ci);
             }
-
             GString * message = g_string_new("Authentication successfull");
             SSL_write(ci->ssl, message->str, message->len);
 
             log_to_file(ci->socket, ci->username->str, "authenticated");
             return;
+<<<<<<< HEAD
         } else {
             ci->authenticated = TRUE;
             ci->authentication_tries = 0;
@@ -419,8 +430,18 @@ void handle_login(char * buf, struct client_info * ci)
             GString * message = g_string_new("Authentication successfull");
             SSL_write(ci->ssl, message->str, message->len);
             return;
+=======
+>>>>>>> 3edaae24c4cbc59f18154e31bb368616189a6f97
         }
-    } 
+    }
+    printf("Creating new account.\n");
+    ci->authenticated = TRUE;
+    ci->authentication_tries = 0;
+    ci->username = username; // username
+    ci->password = password; // password
+    GString * message = g_string_new("Authentication successfull");
+    SSL_write(ci->ssl, message->str, message->len);
+    return;
 }
 
 /*
@@ -474,14 +495,12 @@ void check_command (char * buf, struct client_info * ci)
     }
 
     if ( starts_with("/user", buf) == TRUE ) {
-        printf("test1\n");
         GString * message = g_string_new(NULL);
         if ( ci->authenticated == TRUE ) {
             message = g_string_append(message, "Already authenticated\n");
             SSL_write(ci->ssl, message->str, message->len);
             return;
         }
-        printf("test2\n");
         handle_login(buf, ci);
         return;
     }
@@ -511,7 +530,7 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
     UNUSED(key);
     struct client_info * ci = value;
     int connfd = ci->connfd;
-    if ( FD_ISSET(connfd, (fd_set *)data) ) {
+    if ( FD_ISSET(connfd, (fd_set *)data) && ci->active == 1 ) {
         char buf[4096];
         int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
         if ( err <= 0 ) {
@@ -528,10 +547,12 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             }
             // Close the connection to the user
             close(ci->connfd);
+            SSL_shutdown(ci->ssl);
             SSL_free(ci->ssl);
             char * log_info = "disconnected";
             log_to_file(ci->socket, NULL, log_info);
-            g_tree_remove(client_tree, key); 
+            ci->active = FALSE;
+            ci->authenticated = FALSE;
         } else {
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
