@@ -183,19 +183,13 @@ void readline_callback(char *line)
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
         if ( err == -1 ) {
             printf("Error requesting joining room\n");
-        } else {
-            char response[4096];
-            err = SSL_read(server_ssl, response, sizeof(response));
-            if ( err == -1 ) {
-                printf("Error getting response.\n");
-            } else {
-                response[err] = '\0';
-                printf("%s\n", response);
-            }
         }
         /* Maybe update the prompt. */
+        if ( !prompt ) {
+            printf("prompt is null\n");
+        }
         free(prompt);
-        prompt = "> "; /* What should the new prompt look like? */
+        prompt = NULL; /* What should the new prompt look like? */
         rl_set_prompt(prompt);
         return;
     }
@@ -273,16 +267,6 @@ void readline_callback(char *line)
 
         printf("Line:%s\n", line);
 
-        // TODO : fix 
-
-        // snprintf(buffer, 255, "%s\n", line);
-        // int err = SSL_write(server_ssl, buffer, strlen(buffer));
-        // if ( err == -1 ) {
-        //    printf("Error requesting for list\n");
-        //    return;
-        // } 
-
-
         /* Maybe update the prompt. */
         free(prompt);
         prompt = NULL; /* What should the new prompt look like? */
@@ -295,19 +279,7 @@ void readline_callback(char *line)
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
         if ( err == -1 ) {
             printf("Error requesting for users\n");
-            return;
         } 
-
-        char chat_rooms[4096];
-        err = SSL_read(server_ssl, chat_rooms, sizeof(chat_rooms));
-        if ( err == -1 ) {
-            printf("Error getting users");
-            return; 
-        }
-
-        chat_rooms[err] = '\0';
-
-        printf("%s\n", chat_rooms);
         return;
     }
     /* Sent the buffer to the server. */

@@ -76,7 +76,7 @@ int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
-
+    
     /* If either of the pointers is NULL or the addresses
        belong to different families, we abort. */
     g_assert((_addr1 != NULL) && (_addr2 != NULL) &&
@@ -207,20 +207,31 @@ void join_chat_room(char * room_name, struct client_info * ci)
     char buf[4096];
     memset(&buf, 0, sizeof(buf));
 
+    // Check if the room exists
     if ( cr == NULL ) {
         strcat(buf, "Room not found.\n");
         SSL_write(ci->ssl, buf, strlen(buf));
         return;
     } 
 
+    printf("cr->name: '%s'\n", cr->name);
+    printf("ci->room: '%s'\n", ci->room);
+
+    // Remove user from his old room
     if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
-        struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp, ci->room);
-        if( old_room != NULL ){
-           old_room->users = g_list_remove(old_room->users, ci);
+        struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+        if( old_room != NULL ) {
+            printf("removing user for his old room\n");
+            old_room->users = g_list_remove(old_room->users, ci);
+        } else {
+            printf("Old room not found\n");
         }
     }
+
+    // Register the user in the room
     ci->room = cr->name;
-    if(g_list_find(cr->users, ci) == NULL){
+    if(g_list_find(cr->users, ci) == NULL) {
+        printf("registering user in new room\n");
         cr->users = g_list_append(cr->users, ci);
     }
 
@@ -287,6 +298,16 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
         int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
         if ( err <= 0 ) {
             printf("Error: SSL_read, disconnecting client\n");
+            
+            // Remove user from chat room
+            if ( ci->room ) {
+                struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+                if ( cr != NULL ) {
+                    printf("Removeing user from room.\n");
+                    cr->users = g_list_remove(cr->users, ci);
+                }
+            }
+            // Close the connection to the user
             close(ci->connfd);
             SSL_free(ci->ssl);
             char * log_info = "disconnected";
@@ -296,7 +317,7 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
-            ci->time = time(&now); 
+            ci->time = time(&now); // update the last active time
             check_command(buf, ci);
         }
     }
