@@ -101,6 +101,7 @@ void sigint_handler(int signum) {
     /* We should not use printf inside of signal handlers, this is not
      * considered safe. We may, however, use write() and fsync(). */
     write(STDOUT_FILENO, "Terminated.\n", 12);
+    rl_callback_handler_remove();
     fsync(STDOUT_FILENO);
 }
 
@@ -185,9 +186,6 @@ void readline_callback(char *line)
             printf("Error requesting joining room\n");
         }
         /* Maybe update the prompt. */
-        if ( !prompt ) {
-            printf("prompt is null\n");
-        }
         free(prompt);
         prompt = NULL; /* What should the new prompt look like? */
         rl_set_prompt(prompt);
@@ -264,10 +262,10 @@ void readline_callback(char *line)
         strcat(line, "\n/password ");
         strcat(line, passwd);
         strcat(line, "\n");
-
+        
         printf("Line:%s\n", line);
         snprintf(buffer, 255, "%s\n", line);
-        int err =SSL_write(server_ssl, buffer, sizeof(buffer));
+        int err = SSL_write(server_ssl, buffer, sizeof(buffer));
         if ( err == -1 ) {
             printf("Error sending login info.\n");
         }
@@ -502,6 +500,8 @@ int main(int argc, char **argv)
             int err = SSL_read(server_ssl, buf, sizeof(buf));
             if ( err == -1 ) {
                 printf("Error reading from server!\n"); 
+            } else if ( strlen(buf) == 0 ) {
+                active = 0;
             } else {
                 buf[err] = '\0';
                 printf("%s\n", buf);

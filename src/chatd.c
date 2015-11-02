@@ -188,6 +188,25 @@ gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+void close_connection(struct client_info * ci) 
+{
+    ci->active = FALSE;
+    ci->authenticated = FALSE;
+    ci->authentication_tries = 0;
+    if ( ci->room ) {
+        // Find the client's room 
+        struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+        if ( cr ) {
+            // remove the user from the room
+            cr->users = g_list_remove(cr->users, cr);
+        }
+    }
+    // close the connection
+    close(ci->connfd);
+    SSL_shutdown(ci->ssl);
+    SSL_free(ci->ssl);
+}
+
 /* This function logs an activity to the log file.
  * @param client        Struct with ip and port of the client.
  * @param user          The client user name.
@@ -227,14 +246,20 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
     struct client_info * ci = value;
+    GString * users = data;
     if ( ci->active == TRUE ) {
         struct sockaddr_in socket = ci->socket;
-        strcat((char *) data, inet_ntoa(socket.sin_addr));
-        strcat((char *) data, ":");
-        char buffer[20];
-        sprintf(buffer, "%d", socket.sin_port);
-        strcat((char *) data, buffer);
-        strcat((char *) data, "\n");
+        users = g_string_append(users, inet_ntoa(socket.sin_addr));
+        users = g_string_append(users, g_strdup_printf(":%i ", socket.sin_port));
+        // Check if the user has a username
+        if ( ci->username ) {
+            users = g_string_append(users, ci->username->str);
+        }
+        // Check if the user has a room
+        if ( ci->room ) {
+            users = g_string_append(users, g_strdup_printf(" room='%s'", ci->room)); 
+        }
+        users = g_string_append(users, "\n");
     }
     return FALSE;
 }
@@ -249,8 +274,9 @@ gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
     const struct chat_room * cr = value;
-    strcat((char *) data, cr->name);
-    strcat((char *) data, "\n");
+    GString * rooms = data;
+    rooms = g_string_append(rooms, cr->name);
+    rooms = g_string_append(rooms, "\n");
     return FALSE;
 }
 
@@ -318,7 +344,7 @@ void write_to_client(gpointer value, gpointer data)
  * This function broadcasts a message to all users of a chat_room.
  * @param message       The message to broadcast.
  * @param ci            The sender client_info struct.
- */
+    */
 void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
@@ -381,8 +407,7 @@ void handle_login(char * buf, struct client_info * ci)
                     printf("To many login attempts\n");
                     message = g_string_append(message, "To many login attempts\n");
                     SSL_write(ci->ssl, message->str, message->len);
-                    close(ci->connfd);
-                    SSL_free(ci->ssl);
+                    close_connection(ci);
                     log_to_file(ci->socket, NULL, DISCONNECTED); 
                     return;
                 } 
@@ -450,19 +475,17 @@ void check_command (char * buf, struct client_info * ci)
     printf("Request : '%s'\n", buf);
     // Get list of all users
     if ( strcmp(buf, "/who\n") == 0 ) {
-        char  clients[4096];
-        memset(&clients, 0, sizeof(clients));
-        g_tree_foreach(client_tree, build_client_list, &clients);
-        SSL_write(ci->ssl, clients, strlen(clients));
+        GString * clients = g_string_new(NULL);
+        g_tree_foreach(client_tree, build_client_list, clients);
+        SSL_write(ci->ssl, clients->str, clients->len);
         return;
     }
 
     if ( strcmp(buf, "/list\n") == 0 ) {
         // List all available public chat rooms 
-        char chat_rooms[4096];
-        memset(&chat_rooms, 0, sizeof(chat_rooms));
+        GString * chat_rooms = g_string_new(NULL);
         g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
-        SSL_write(ci->ssl, chat_rooms, strlen(chat_rooms));
+        SSL_write(ci->ssl, chat_rooms->str, chat_rooms->len);
         return;
     } 
 
@@ -530,13 +553,9 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
                 }
             }
             // Close the connection to the user
-            close(ci->connfd);
-            SSL_shutdown(ci->ssl);
-            SSL_free(ci->ssl);
+            close_connection(ci);
             char * log_info = "disconnected";
             log_to_file(ci->socket, NULL, log_info);
-            ci->active = FALSE;
-            ci->authenticated = FALSE;
         } else {
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
@@ -561,8 +580,7 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
         if (err == -1 ) {
             printf("Error shuting down ssl!\n");
         }
-        close(ci->connfd);
-        SSL_free(ci->ssl);
+        close_connection(ci);
         char * log_info = "timed out.";
         log_to_file(ci->socket, NULL, log_info);
         g_tree_remove(client_tree, key); 
