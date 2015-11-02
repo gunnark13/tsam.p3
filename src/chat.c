@@ -178,7 +178,6 @@ void readline_callback(char *line)
             return;
         }
         char *chatroom = strdup(&(line[i]));
-
         /* Process and send this information to the server. */
         snprintf(buffer, 255, "%s\n", line);
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
@@ -217,7 +216,7 @@ void readline_callback(char *line)
         } else {
             chat_rooms[err] = '\0';
             printf("Available rooms:\n%s\n", chat_rooms);
-        }
+        }   
         return;
     }
     if (strncmp("/roll", line, 5) == 0) {
