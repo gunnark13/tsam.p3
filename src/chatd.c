@@ -101,6 +101,12 @@ int chat_room_cmp(const void * room_a, const void * room_b)
     return strcmp(a, b);
 }
 
+/*
+ * This function compares two rooms for searching chat_room tree.
+ * @param room_a        The former room for comparison.
+ * @param room_b        The latter room for comparison.
+ * @return int          Negative, positive or zero for decision making.
+ */
 int chat_room_cmp_search(const void * room_a, const void * room_b)
 {
     const char * a = room_a;
@@ -116,6 +122,12 @@ int chat_room_cmp_search(const void * room_a, const void * room_b)
     }
 }
 
+/*
+ * This function checks for a substring of a string.
+ * @param substring   The substring in question.
+ * @param str         The string in question.
+ * @return            Boolean.
+ */
 gboolean starts_with(const char * substring, const char * str)
 {
     if(strncmp(str, substring, strlen(substring)) == 0) {
@@ -124,9 +136,11 @@ gboolean starts_with(const char * substring, const char * str)
     return FALSE;
 }
 
-
-/* This function sets the highest_connfd varible (data) as the 
- * value of the connfd.  
+/* This function sets the highest_connfd varible as the value of the connfd.
+ * @param key       The key for tree, unused.
+ * @param value     The client_info struct.
+ * @param data      The current highest_connfd. 
+ * @return          Boolean for GTraverseFunc
  */ 
 gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
 {
@@ -139,7 +153,13 @@ gboolean set_highest_connfd(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
-
+/*
+ * This function sets the file descriptor for a client.
+ * @param key       The key for tree, unused.
+ * @param value     The client_info struct.
+ * @param data      The fd_set.
+ * @return          Booelan for GTraverseFunc.
+ */
 gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -150,9 +170,9 @@ gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
 }
 
 /* This function logs an activity to the log file.
- * <client> a struct which holds the ip and port number of the client
- * <user> the client user name
- * <log_info> the log message 
+ * @param client        Struct with ip and port of the client.
+ * @param user          The client user name.
+ * @param log_info      The log message.
  */ 
 void log_to_file(struct sockaddr_in client, char * user, char * log_info) 
 {
@@ -177,7 +197,13 @@ void log_to_file(struct sockaddr_in client, char * user, char * log_info)
     }
 }
 
-/*This function finds all users and concatenates their info to the string data.*/
+/*
+ * This function finds all users and concatenates their info to the parameter string, data.
+ * @param key       The key, for tree.
+ * @param value     The client_info struct.
+ * @param data      The char array for concatenating the list to.
+ * @return          Boolean for GTraverseFunc.
+ */
 gboolean build_client_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -192,6 +218,12 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/*
+ * This function builds the client list when requested with /list
+ * @param key       The key, for tree.
+ * @param value     The chat room that contains the requested list
+ * @param data      The char array for concatenating the list to.
+ */
 gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -201,35 +233,51 @@ gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/*
+ * This function enrolls a client to a chat room.
+ * @param room_name     The room the client wants to join.
+ * @param ci            The client_info struct.
+ */
 void join_chat_room(char * room_name, struct client_info * ci)
 {
+    // Search for the room in question.
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, room_name);
     char buf[4096];
     memset(&buf, 0, sizeof(buf));
-
+    
     if ( cr == NULL ) {
+        // No room is found, write that message to client.
         strcat(buf, "Room not found.\n");
         SSL_write(ci->ssl, buf, strlen(buf));
         return;
     } 
-
+    
     if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
+        // The client is already in a room, find that room "old_room".
         struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp, ci->room);
         if( old_room != NULL ){
+            // Remove the client from his "old room"
            old_room->users = g_list_remove(old_room->users, ci);
         }
     }
+    // Update the client_info room name.
     ci->room = cr->name;
     if(g_list_find(cr->users, ci) == NULL){
+        // Add the client to his room unless he is there already.
         cr->users = g_list_append(cr->users, ci);
     }
-
+    // Write registration message to client.
     strcat(buf, "Registered to room: ");
     strcat(buf, cr->name);
     strcat(buf, "\n");
     SSL_write(ci->ssl, buf, strlen(buf));
 }
 
+/*
+ * This function writes to a client.
+ * @param value     The client_info struct.
+ * @param data      The message to send.
+ */
 void write_to_client(gpointer value, gpointer data) 
 {
     const struct client_info * ci = value;
@@ -237,6 +285,11 @@ void write_to_client(gpointer value, gpointer data)
     SSL_write(ci->ssl, message, strlen(message)); 
 }
 
+/*
+ * This function broadcasts a message to all users of a chat_room.
+ * @param message       The message to broadcast.
+ * @param ci            The sender client_info struct.
+ */
 void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
@@ -246,6 +299,8 @@ void broadcast(char * buf, struct client_info * ci)
     }
 }
 
+/*
+ * This function checks for a command coming from the client*/
 void check_command (char * buf, struct client_info * ci)
 {
     // Get list of all users
