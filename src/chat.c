@@ -273,6 +273,32 @@ void readline_callback(char *line)
         rl_set_prompt(prompt);
         return;
     }
+    if(strncmp("/nick", lnem 5 ) == 0 ){
+        int i = 5;
+        /* Skip whitespaces */
+        while(line[i] != '\0' && isspace(line[i])){ i++; }
+        if(line[i] == '\0' ){
+            wrtie(STDOUT_FILEND, "Usage : /nick nickname \n", 22);
+            fsync(STDOUT_FILEND);
+            rl_redisplay();
+            return;
+        }
+        char *new_nickname = strdup(&(line[i]));
+
+        /* Process send the new nickname to the server */
+        snprintf(buffer, 255, "%s\n", line);
+        int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        if( err == -1 ) {
+            printf("Error setting this nickname.\n");
+        }
+        if( !prompt ) {
+            printf("prompt is null \n");
+        }
+        free(prompt);
+        prompt = NULL;
+        rl_set_prompt(prompt);
+        return;
+    }
     if (strncmp("/who", line, 4) == 0) {
         /* Query all available users */
         snprintf(buffer, 255, "%s\n", line);
