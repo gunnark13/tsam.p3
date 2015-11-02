@@ -28,7 +28,7 @@
 
 #define UNUSED(x) (void)(x)
 #define MAX_CLIENTS 5 
-
+// Struct to maintain client information.
 struct client_info {
     int connfd; 
     gboolean active; 
@@ -41,11 +41,13 @@ struct client_info {
     char * room;
 };
 
+// Struct to maintain chat room information.
 struct chat_room {
     char * name;
     GList * users;
 };
 
+// Trees with chat_room or client_info structs.
 GTree *chat_room_tree;
 GTree *client_tree;
 
@@ -73,6 +75,11 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+/*
+ * This function compares sockaddresses for search in GTree.
+ * @param addr1     The first address.
+ * @param addr2     The second address.
+ */
 int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
@@ -95,6 +102,11 @@ int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
     return 0;
 }
 
+/*
+ * This function compares two chat room names.
+ * @param room_a        The first room.
+ * @param room_2        The second room.
+ * @return int          Positive, negative or zero.*/
 int chat_room_cmp(const void * room_a, const void * room_b)
 {
     const char * a = room_a;
@@ -103,9 +115,10 @@ int chat_room_cmp(const void * room_a, const void * room_b)
 }
 
 /*
- * This function compares two rooms for searching chat_room tree.
- * @param room_a        The former room for comparison.
- * @param room_b        The latter room for comparison.
+ * This function compares two chat rooms for searching in a GTree, helper since incorrect decisions
+ * are made in a GTree if the return value from strcmp is used directly Negative becomes pos and vice versa.
+ * @param room_a        The first room.
+ * @param room_b        The second room.
  * @return int          Negative, positive or zero for decision making.
  */
 int chat_room_cmp_search(const void * room_a, const void * room_b)
@@ -223,7 +236,8 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
  * This function builds the client list when requested with /list
  * @param key       The key, for tree.
  * @param value     The chat room that contains the requested list
- * @param data      The char array for concatenating the list to.
+ * @param data      The char array for concatenating the list to.i
+ * @return          Boolean for GTraverseFunc
  */
 gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
 {
@@ -325,6 +339,10 @@ void change_nick_name(char * nick, struct client_info * ci)
     printf("Nick name: %s\n", ci->nickname->str);
 }
 
+/*This function checks for commands from the client, commands start with '/'
+ * @param buf       The message buffer.
+ * @param ci        The client_info struct.
+ */
 void check_command (char * buf, struct client_info * ci)
 {
     printf("Request : '%s'\n", buf);
@@ -378,7 +396,13 @@ void check_command (char * buf, struct client_info * ci)
         broadcast(message->str, ci); // broadcast message to room
     }
 }
-
+/*
+ * This funcion reads from a client, on failure connection is closed.
+ * @param key       The key for GTree, unused.
+ * @param value     The client_info struct.
+ * @param data      The fd_set.
+ * @return          Boolean for GTraverseFunc.
+ */
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -416,6 +440,10 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/*This function checks for a client timeout.
+ * @param key       The key for GTree, unused.
+ * @param value     The client_info struct
+ * @param data      Unused*/
 gboolean timeout_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -438,6 +466,11 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/* Server main function.
+ * @param argc      The argument count.
+ * @param **argv    The argument vector.
+ * @return          Exit code.
+ */
 int main(int argc, char **argv)
 {
     printf("Number of arguments %d\n", argc);
