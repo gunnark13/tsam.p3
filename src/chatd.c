@@ -36,7 +36,7 @@ struct client_info {
     struct sockaddr_in socket;
     SSL *ssl;
     char * username;
-    char * nickname;
+    GString * nickname;
     char * password;
     char * room;
 };
@@ -253,7 +253,8 @@ void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
     if ( cr != NULL ) {
-        printf("Broadcasting to %d users.\n", g_list_length(cr->users));
+        printf("Broadcasting to %d users. Message : '%s'\n", g_list_length(cr->users),
+            buf);
         g_list_foreach(cr->users, write_to_client, buf);
     }
 }
@@ -267,14 +268,15 @@ void broadcast(char * buf, struct client_info * ci)
  */ 
 void change_nick_name(char * nick, struct client_info * ci)
 {
+    ci->nickname = g_string_new(nick);
     char * nickappend = " (nick)";
-    strcat(ci->nickname, nick);
-    strcat(ci->nickname, nickappend);
-    printf("Nick name: %s\n", ci->nickname);
+    ci->nickname = g_string_append(ci->nickname, nickappend);
+    printf("Nick name: %s\n", ci->nickname->str);
 }
 
 void check_command (char * buf, struct client_info * ci)
 {
+    printf("Request : '%s'\n", buf);
     // Get list of all users
     if ( strcmp(buf, "/who\n") == 0 ) {
         char  clients[4096];
@@ -308,7 +310,21 @@ void check_command (char * buf, struct client_info * ci)
     }
 
     if ( ci->room != NULL ) {
-        broadcast(buf, ci); // broadcast message to room
+        // preappend the nick name, user name or 'anonymous' to the message
+        GString * message = g_string_new(NULL);
+        printf("USER NICKNAME '%s'\n", ci->nickname->str);
+        if ( ci->nickname ) {
+            printf("appending nickname to message : '%s'\n", ci->nickname->str);
+            message = g_string_append(message, ci->nickname->str);
+        } else if ( ci->username ) {
+            message = g_string_append(message, ci->username);
+        } else {        
+            message = g_string_append(message, "anonymous");
+        }
+        message = g_string_append(message, ": ");
+        message = g_string_append(message, buf);
+
+        broadcast(message->str, ci); // broadcast message to room
     }
 }
 
@@ -325,7 +341,8 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             
             // Remove user from chat room
             if ( ci->room ) {
-                struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+                struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, 
+                                                        ci->room);
                 if ( cr != NULL ) {
                     printf("Removeing user from room.\n");
                     cr->users = g_list_remove(cr->users, ci);

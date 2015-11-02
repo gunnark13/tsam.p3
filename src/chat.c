@@ -273,13 +273,13 @@ void readline_callback(char *line)
         rl_set_prompt(prompt);
         return;
     }
-    if(strncmp("/nick", lnem 5 ) == 0 ){
+    if (strncmp("/nick", line, 5 ) == 0 ) {
         int i = 5;
         /* Skip whitespaces */
         while(line[i] != '\0' && isspace(line[i])){ i++; }
         if(line[i] == '\0' ){
-            wrtie(STDOUT_FILEND, "Usage : /nick nickname \n", 22);
-            fsync(STDOUT_FILEND);
+            write(STDOUT_FILENO, "Usage : /nick nickname \n", 22);
+            fsync(STDOUT_FILENO);
             rl_redisplay();
             return;
         }
