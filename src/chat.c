@@ -273,7 +273,7 @@ void readline_callback(char *line)
         rl_set_prompt(prompt);
         return;
     }
-    if(strncmp("/nick", line, 5 ) == 0 ){
+    if (strncmp("/nick", line, 5 ) == 0 ) {
         int i = 5;
         /* Skip whitespaces */
         while(line[i] != '\0' && isspace(line[i])){ i++; }
