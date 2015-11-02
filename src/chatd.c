@@ -487,6 +487,8 @@ void check_command (char * buf, struct client_info * ci)
     if ( ci->room != NULL ) {
         // preappend the nick name, user name or 'anonymous' to the message
         GString * message = g_string_new(NULL);
+        //printf("username : %s \n", ci->username);
+        printf("nickname : %s \n", ci->nickname->str);
         if ( ci->nickname ) {
             printf("appending nickname to message : '%s'\n", ci->nickname->str);
             message = g_string_append(message, ci->nickname->str);
