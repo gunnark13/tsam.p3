@@ -389,6 +389,7 @@ void handle_login(char * buf, struct client_info * ci)
             ci->authentication_tries = 0;
             ci->username = found_client->username;
             ci->password = found_client->password;
+            printf("Username of new client %s", ci->username->str);
             ci->socket = found_client->socket;
             
             // remove the old instance of the user
@@ -412,6 +413,7 @@ void handle_login(char * buf, struct client_info * ci)
             ci->authenticated = TRUE;
             ci->authentication_tries = 0;
             ci->username = g_string_new(split_1[0]); // username
+            printf("Username of new client %s", ci->username->str);
             ci->password = g_string_new(split_1[1]); // password
             
             GString * message = g_string_new("Authentication successfull");
