@@ -3,3 +3,4 @@
 /src/chatd
 *.swp
 log.txt
+valgrind.sh

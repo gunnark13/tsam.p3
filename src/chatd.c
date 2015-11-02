@@ -395,6 +395,17 @@ void check_command (char * buf, struct client_info * ci)
 
         broadcast(message->str, ci); // broadcast message to room
     }
+    
+    printf("outside starts_with(/say)\n");
+    if ( starts_with("/say", buf) == TRUE ) {
+        // TODO : Search for key
+        // struct username_search * us = g_new0(struct username_search, 1);
+        // struct client_info * ci = g_tree_search(client_tree, sockaddr_in_cmp_search, us->key);
+        // TODO : Search for client_info with key
+        // Use client_info->ssl to write to a spcific client 
+        // the djadddem message.
+        printf("wannasendaprivatemassege?\n");
+    }
 }
 /*
  * This funcion reads from a client, on failure connection is closed.
