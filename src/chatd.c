@@ -419,19 +419,6 @@ void handle_login(char * buf, struct client_info * ci)
 
             log_to_file(ci->socket, ci->username->str, "authenticated");
             return;
-<<<<<<< HEAD
-        } else {
-            ci->authenticated = TRUE;
-            ci->authentication_tries = 0;
-            ci->username = g_string_new(split_1[0]); // username
-            printf("Username of new client %s", ci->username->str);
-            ci->password = g_string_new(split_1[1]); // password
-            
-            GString * message = g_string_new("Authentication successfull");
-            SSL_write(ci->ssl, message->str, message->len);
-            return;
-=======
->>>>>>> 3edaae24c4cbc59f18154e31bb368616189a6f97
         }
     }
     printf("Creating new account.\n");
