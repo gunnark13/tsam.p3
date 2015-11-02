@@ -36,6 +36,7 @@ struct client_info {
     struct sockaddr_in socket;
     SSL *ssl;
     char * username;
+    GString * nickname;
     char * password;
     char * room;
 };
@@ -76,7 +77,7 @@ int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
-
+    
     /* If either of the pointers is NULL or the addresses
        belong to different families, we abort. */
     g_assert((_addr1 != NULL) && (_addr2 != NULL) &&
@@ -245,25 +246,34 @@ void join_chat_room(char * room_name, struct client_info * ci)
     char buf[4096];
     memset(&buf, 0, sizeof(buf));
     
+    // Check if the room exists
     if ( cr == NULL ) {
         // No room is found, write that message to client.
         strcat(buf, "Room not found.\n");
         SSL_write(ci->ssl, buf, strlen(buf));
         return;
     } 
-    
+
+    printf("cr->name: '%s'\n", cr->name);
+    printf("ci->room: '%s'\n", ci->room);
+
+    // Remove user from his old room
     if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
         // The client is already in a room, find that room "old_room".
-        struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp, ci->room);
-        if( old_room != NULL ){
-            // Remove the client from his "old room"
-           old_room->users = g_list_remove(old_room->users, ci);
+        struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+        if( old_room != NULL ) {
+            printf("removing user for his old room\n");
+            old_room->users = g_list_remove(old_room->users, ci);
+        } else {
+            printf("Old room not found\n");
         }
     }
-    // Update the client_info room name.
+
+    // Register the user in the room
     ci->room = cr->name;
-    if(g_list_find(cr->users, ci) == NULL){
+    if(g_list_find(cr->users, ci) == NULL) {
         // Add the client to his room unless he is there already.
+        printf("registering user in new room\n");
         cr->users = g_list_append(cr->users, ci);
     }
     // Write registration message to client.
@@ -294,15 +304,30 @@ void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
     if ( cr != NULL ) {
-        printf("Broadcasting to %d users.\n", g_list_length(cr->users));
+        printf("Broadcasting to %d users. Message : '%s'\n", g_list_length(cr->users),
+            buf);
         g_list_foreach(cr->users, write_to_client, buf);
     }
 }
 
 /*
- * This function checks for a command coming from the client*/
+ * This function changes the nick name for a given user. All nick names will have the 
+ * appended text '(nick)' to ensure that user names and nick names are not confused 
+ * together.
+ * @param nick      the new nick name 
+ * @param ci        the user requesting for the nick name
+ */ 
+void change_nick_name(char * nick, struct client_info * ci)
+{
+    ci->nickname = g_string_new(nick);
+    char * nickappend = " (nick)";
+    ci->nickname = g_string_append(ci->nickname, nickappend);
+    printf("Nick name: %s\n", ci->nickname->str);
+}
+
 void check_command (char * buf, struct client_info * ci)
 {
+    printf("Request : '%s'\n", buf);
     // Get list of all users
     if ( strcmp(buf, "/who\n") == 0 ) {
         char  clients[4096];
@@ -327,8 +352,30 @@ void check_command (char * buf, struct client_info * ci)
         join_chat_room(g_strchomp(&buf[i]), ci); 
         return;
     }
+
+    if ( starts_with("/nick", buf) == TRUE ) {
+        int i = 5;
+        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+        change_nick_name(g_strchomp(&buf[i]), ci);
+        return;
+    }
+
     if ( ci->room != NULL ) {
-        broadcast(buf, ci); // broadcast message to room
+        // preappend the nick name, user name or 'anonymous' to the message
+        GString * message = g_string_new(NULL);
+        printf("USER NICKNAME '%s'\n", ci->nickname->str);
+        if ( ci->nickname ) {
+            printf("appending nickname to message : '%s'\n", ci->nickname->str);
+            message = g_string_append(message, ci->nickname->str);
+        } else if ( ci->username ) {
+            message = g_string_append(message, ci->username);
+        } else {        
+            message = g_string_append(message, "anonymous");
+        }
+        message = g_string_append(message, ": ");
+        message = g_string_append(message, buf);
+
+        broadcast(message->str, ci); // broadcast message to room
     }
 }
 
@@ -342,6 +389,17 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
         int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
         if ( err <= 0 ) {
             printf("Error: SSL_read, disconnecting client\n");
+            
+            // Remove user from chat room
+            if ( ci->room ) {
+                struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, 
+                                                        ci->room);
+                if ( cr != NULL ) {
+                    printf("Removeing user from room.\n");
+                    cr->users = g_list_remove(cr->users, ci);
+                }
+            }
+            // Close the connection to the user
             close(ci->connfd);
             SSL_free(ci->ssl);
             char * log_info = "disconnected";
@@ -351,7 +409,7 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
-            ci->time = time(&now); 
+            ci->time = time(&now); // update the last active time
             check_command(buf, ci);
         }
     }
