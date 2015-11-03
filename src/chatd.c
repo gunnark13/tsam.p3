@@ -73,7 +73,7 @@ static GTree* chat_room_tree;
 static GTree* client_tree;
 
 /* http://stackoverflow.com/questions/2262386/generate-sha256-with-openssl-and-c
- */ 
+*/ 
 void sha256(char *string, char outputBuffer[65])
 {
     unsigned char hash[SHA256_DIGEST_LENGTH];
@@ -121,7 +121,7 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
-    
+
     /* If either of the pointers is NULL or the addresses
        belong to different families, we abort. */
     g_assert((_addr1 != NULL) && (_addr2 != NULL) &&
@@ -146,7 +146,7 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
  * @return int          Positive, negative or zero.*/
 gint chat_room_cmp(const void * room_a, const void * room_b, gpointer userData)
 {
-    
+
     const char * a = room_a;
     const char * b = room_b;
     return strcmp(a, b);
@@ -327,7 +327,7 @@ void join_chat_room(char * room_name, struct client_info * ci)
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, room_name);
     char buf[4096];
     memset(&buf, 0, sizeof(buf));
-    
+
     // Check if the room exists
     if ( cr == NULL ) {
         // No room is found, write that message to client.
@@ -381,13 +381,13 @@ void write_to_client(gpointer value, gpointer data)
  * This function broadcasts a message to all users of a chat_room.
  * @param message       The message to broadcast.
  * @param ci            The sender client_info struct.
-    */
+ */
 void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
     if ( cr != NULL ) {
         printf("Broadcasting to %d users. Message : '%s'\n", g_list_length(cr->users),
-            buf);
+                buf);
         g_list_foreach(cr->users, write_to_client, buf);
     }
 }
@@ -396,7 +396,7 @@ gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
 {
     struct client_info * ci = value;
     struct username_search * us = data;
-    
+
     if ( ci->username == NULL ) {
         return FALSE;
     }
@@ -418,10 +418,10 @@ void handle_private_message(char * message, struct client_info * ci)
     if ( !split_1[1] || !split_1[2] ) {
         return;
     }
-    
+
     GString * user = g_string_new(g_strchomp(split_1[1]));
     GString * msg = g_string_new(g_strchomp(split_1[2]));
-    
+
     printf("user : '%s'\n", user->str);
     printf("msg : '%s'\n", msg->str);
 
@@ -430,7 +430,7 @@ void handle_private_message(char * message, struct client_info * ci)
     g_tree_foreach(client_tree, find_user_by_username, us);
     if ( us->key ) {
         struct client_info * found_user = g_tree_search(client_tree, sockaddr_in_cmp_search, 
-                                                        us->key);
+                us->key);
         if ( found_user ) {
             msg = g_string_prepend(msg,  g_strdup_printf("Private message from: %s\nMessage: ", ci->username->str));
             // Send the private message to the user 
@@ -440,7 +440,9 @@ void handle_private_message(char * message, struct client_info * ci)
     }
     GString * response = g_string_new("User not found.\n");
     SSL_write(ci->ssl, response->str, response->len);
-    
+
+    g_string_free(us->username, TRUE);
+    g_free(us);
     g_string_free(user, TRUE);
     g_string_free(msg, TRUE);
     g_string_free(response, TRUE);
@@ -459,20 +461,21 @@ void handle_login(char * buf, struct client_info * ci)
     }
     GString * username = g_string_new(g_strchomp(split_1[0]));
     GString * password = g_string_new(g_strchomp(split_1[1]));
-    
+
     // Hash the password string from the user
     char hash_p[4096], salt[4096];
     memset(&salt, 0, sizeof(salt));
     strcat(salt, "DvoS8URnIP+2%ts%AeyLenlbin^cLxb%~vegmcNEDRvjOPSB4*ItTK0BVDMK");
     strcat(salt, password->str);
     sha256(salt, hash_p);
-    
+
     g_string_free(password, TRUE);
 
     // Find a active user with the same user name
     struct username_search * us = g_new0(struct username_search, 1);
     us->username = username;
     g_tree_foreach(client_tree, find_user_by_username, us);
+    g_string_free(us->username, TRUE);
     g_free(us);
 
     // Check if there is no other user with the given username logged on
@@ -483,7 +486,7 @@ void handle_login(char * buf, struct client_info * ci)
         g_key_file_load_from_file(keyfile, PASSWORDS_FILE, G_KEY_FILE_NONE, NULL);
         gchar *passwd_attempt = g_base64_encode((const guchar *)hash_p, strlen(hash_p));
         gchar *passwd_file = g_key_file_get_string(keyfile, "passwords", username->str, NULL);
-        
+
         printf("attempt: '%s'\n", passwd_attempt);
         printf("file   : '%s'\n", passwd_file);
 
@@ -510,11 +513,10 @@ void handle_login(char * buf, struct client_info * ci)
             log_to_file(ci->socket, ci->username->str, log_info->str);
             g_string_free(message, TRUE);
             g_string_free(log_info, TRUE);
- 
-        // else: cheak if password is correct and user name is matching 
+
+            // else: cheak if password is correct and user name is matching 
         } else if ( g_strcmp0(passwd_attempt, passwd_file) == 0 ) {
             ci->authentication_tries = 0;
-
             ci->authenticated = TRUE;
             ci->username = username;
             GString * message = g_string_new("Authentication successfull");
@@ -525,7 +527,7 @@ void handle_login(char * buf, struct client_info * ci)
             g_string_free(message, TRUE);
             g_string_free(log_info, TRUE);
 
-        // else: password is incorrect
+            // else: password is incorrect
         } else {
             printf("Incorrect password\n");
             GString * message = g_string_new("Authentication failed.\n");
@@ -538,20 +540,9 @@ void handle_login(char * buf, struct client_info * ci)
                 printf("To many login attempts\n");
                 message = g_string_append(message, "To many login attempts\n");
                 SSL_write(ci->ssl, message->str, message->len);
-                    close_connection(ci);
-                    log_to_file(ci->socket, NULL, DISCONNECTED);
-                } 
-                g_string_free(message, TRUE);
-            }
-            g_key_file_free(keyfile);
-            g_free(passwd_attempt);
-            g_free(passwd_file);
-
-        // There was some user found with the same username
-        } else {
-            printf("Already logged in from somewhere else.\n");
-            GString * message = g_string_new("Already logged in from somewhere else.\n");
-            SSL_write(ci->ssl, message->str, message->len);
+                close_connection(ci);
+                log_to_file(ci->socket, NULL, DISCONNECTED);
+            } 
             g_string_free(message, TRUE);
         }
         g_string_free(username, TRUE);
@@ -588,72 +579,112 @@ void handle_login(char * buf, struct client_info * ci)
             g_string_free(clients, TRUE); 
             return;
         }
+        // There was some user found with the same username
+    } else {
+        printf("Already logged in from somewhere else.\n");
+        GString * message = g_string_new("Already logged in from somewhere else.\n");
+        SSL_write(ci->ssl, message->str, message->len);
+        g_string_free(message, TRUE);
+    }
+    g_string_free(username, TRUE);
+}
 
-        if ( strcmp(buf, "/list\n") == 0 ) {
-            // List all available public chat rooms 
-            GString * chat_rooms = g_string_new(NULL);
-            g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
-            SSL_write(ci->ssl, chat_rooms->str, chat_rooms->len);
-            g_string_free(chat_rooms, TRUE); 
-            return;
-        } 
+/*
+ * This function changes the nick name for a given user. All nick names will have the 
+ * appended text '(nick)' to ensure that user names and nick names are not confused 
+ * together.
+ * @param nick      the new nick name 
+ * @param ci        the user requesting for the nick name
+ */ 
+void change_nick_name(char * nick, struct client_info * ci)
+{
+    ci->nickname = g_string_new(nick);
+    char * nickappend = " (nick)";
+    ci->nickname = g_string_append(ci->nickname, nickappend);
+    printf("Nick name: %s\n", ci->nickname->str);
 
-        if ( starts_with("/join", buf) == TRUE ) {
-            int i = 5;
-            while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-            join_chat_room(g_strchomp(&buf[i]), ci); 
-            return;
-        }
-        
-        if ( starts_with("/nick", buf) == TRUE ) {
-            int i = 5;
-            while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-            change_nick_name(g_strchomp(&buf[i]), ci);
-            return;
-        }
+}
 
-        if ( starts_with("/user", buf) == TRUE ) {
-            if ( ci->authenticated == TRUE ) {
-                GString * message = g_string_new(NULL);
-                message = g_string_append(message, "Already authenticated\n");
-                SSL_write(ci->ssl, message->str, message->len);
-                g_string_free(message, TRUE); 
-                return;
-            }
-            handle_login(buf, ci);
-            return;
-        }
-        
-        if ( starts_with("/say", buf) == TRUE ) {
-            printf("Inside /say\n");
-            if ( ci->authenticated == FALSE ) {
-                GString * message = g_string_new("Login to send private messages.\n");
-                SSL_write(ci->ssl, message->str, message->len);
-                g_string_free(message, TRUE);
-                return;
-            }
-            handle_private_message(buf, ci);
-            return;
-        }
+/*This function checks for commands from the client, commands start with '/'
+ * @param buf       The message buffer.
+ * @param ci        The client_info struct.
+ */
+void check_command (char * buf, struct client_info * ci)
+{
+    // Get list of all users
+    if ( strcmp(buf, "/who\n") == 0 ) {
+        GString * clients = g_string_new(NULL);
+        g_tree_foreach(client_tree, build_client_list, clients);
+        SSL_write(ci->ssl, clients->str, clients->len);
+        g_string_free(clients, TRUE); 
+        return;
+    }
 
-        if ( ci->room != NULL ) {
-            // preappend the nick name, user name or 'anonymous' to the message
+    if ( strcmp(buf, "/list\n") == 0 ) {
+        // List all available public chat rooms 
+        GString * chat_rooms = g_string_new(NULL);
+        g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
+        SSL_write(ci->ssl, chat_rooms->str, chat_rooms->len);
+        g_string_free(chat_rooms, TRUE); 
+        return;
+    } 
+
+    if ( starts_with("/join", buf) == TRUE ) {
+        int i = 5;
+        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+        join_chat_room(g_strchomp(&buf[i]), ci); 
+        return;
+    }
+
+    if ( starts_with("/nick", buf) == TRUE ) {
+        int i = 5;
+        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+        change_nick_name(g_strchomp(&buf[i]), ci);
+        return;
+    }
+
+    if ( starts_with("/user", buf) == TRUE ) {
+        if ( ci->authenticated == TRUE ) {
             GString * message = g_string_new(NULL);
-            if ( ci->nickname ) {
-                printf("appending nickname to message : '%s'\n", ci->nickname->str);
-                message = g_string_append(message, ci->nickname->str);
-            } else if ( ci->username ) {
-                message = g_string_append(message, ci->username->str);
-            } else {        
-                message = g_string_append(message, "anonymous");
-            }
-            message = g_string_append(message, ": ");
-            message = g_string_append(message, buf);
-
-            broadcast(message->str, ci); // broadcast message to room
+            message = g_string_append(message, "Already authenticated\n");
+            SSL_write(ci->ssl, message->str, message->len);
             g_string_free(message, TRUE); 
+            return;
         }
-   }
+        handle_login(buf, ci);
+        return;
+    }
+
+    if ( starts_with("/say", buf) == TRUE ) {
+        printf("Inside /say\n");
+        if ( ci->authenticated == FALSE ) {
+            GString * message = g_string_new("Login to send private messages.\n");
+            SSL_write(ci->ssl, message->str, message->len);
+            g_string_free(message, TRUE);
+            return;
+        }
+        handle_private_message(buf, ci);
+        return;
+    }
+
+    if ( ci->room != NULL ) {
+        // preappend the nick name, user name or 'anonymous' to the message
+        GString * message = g_string_new(NULL);
+        if ( ci->nickname ) {
+            printf("appending nickname to message : '%s'\n", ci->nickname->str);
+            message = g_string_append(message, ci->nickname->str);
+        } else if ( ci->username ) {
+            message = g_string_append(message, ci->username->str);
+        } else {        
+            message = g_string_append(message, "anonymous");
+        }
+        message = g_string_append(message, ": ");
+        message = g_string_append(message, buf);
+
+        broadcast(message->str, ci); // broadcast message to room
+        g_string_free(message, TRUE); 
+    }
+}
 /*
  * This funcion reads from a client, on failure connection is closed.
  * @param key       The key for GTree, unused.
@@ -671,11 +702,11 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
         int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
         if ( err <= 0 ) {
             printf("Error: SSL_read, disconnecting client\n");
-            
+
             // Remove user from chat room
             if ( ci->room ) {
                 struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, 
-                                                        ci->room);
+                        ci->room);
                 if ( cr != NULL ) {
                     printf("Removeing user from room.\n");
                     // TODO Free memory
@@ -775,13 +806,20 @@ void client_tree_value_destroy(gpointer data){
     SSL_shutdown(ci->ssl);
     close(ci->connfd);
     SSL_free(ci->ssl);
+    g_string_free(ci->username, TRUE);
+    g_string_free(ci->nickname, TRUE);
     g_free(ci);
 }
 
 void sigint_handler(int sig){
     UNUSED(sig);    
+<<<<<<< HEAD
    //g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
    //g_tree_foreach(client_tree, free_user_tree, NULL);
+=======
+    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+    g_tree_foreach(client_tree, free_user_tree, NULL);
+>>>>>>> 8b0833fab453d863e528ee2f692b418f7385ed97
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
@@ -794,7 +832,7 @@ void sigint_handler(int sig){
     ERR_free_strings();
     ERR_remove_state(0);
     CRYPTO_cleanup_all_ex_data();
-                                        
+
     exit(0);
 
 }
@@ -827,7 +865,7 @@ int main(int argc, char **argv)
     // Load certificate file into the structure 
     if (SSL_CTX_use_certificate_file(ssl_ctx, CERTIFICATE_FILE, SSL_FILETYPE_PEM) <= 0) {
         printf("Error loading certificate file");
-            ERR_print_errors_fp(stderr);
+        ERR_print_errors_fp(stderr);
         exit(1);
     }
     // Load private key file into the structure
@@ -871,8 +909,8 @@ int main(int argc, char **argv)
     listen(sockfd, MAX_CLIENTS);
     client_tree = g_tree_new_full(sockaddr_in_cmp, NULL, client_tree_key_destroy, client_tree_value_destroy);
     chat_room_tree = g_tree_new_full(chat_room_cmp , NULL, chat_room_tree_key_destroy, chat_room_tree_value_destroy);
-//    client_tree = g_tree_new(sockaddr_in_cmp);
-//    chat_room_tree = g_tree_new(chat_room_cmp);
+    //    client_tree = g_tree_new(sockaddr_in_cmp);
+    //    chat_room_tree = g_tree_new(chat_room_cmp);
 
     // Initilize rooms
     struct chat_room * room1 = g_new0(struct chat_room, 1);
