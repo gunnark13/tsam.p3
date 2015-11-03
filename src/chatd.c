@@ -439,7 +439,11 @@ void handle_private_message(char * message, struct client_info * ci)
         }
     }
     GString * response = g_string_new("User not found.\n");
-    SSL_write(ci->ssl, response->str, response->len); 
+    SSL_write(ci->ssl, response->str, response->len);
+    
+    g_string_free(user, TRUE);
+    g_string_free(msg, TRUE);
+    g_string_free(response, TRUE);
 }
 
 void handle_login(char * buf, struct client_info * ci)
@@ -534,115 +538,119 @@ void handle_login(char * buf, struct client_info * ci)
                 printf("To many login attempts\n");
                 message = g_string_append(message, "To many login attempts\n");
                 SSL_write(ci->ssl, message->str, message->len);
-                close_connection(ci);
-                log_to_file(ci->socket, NULL, DISCONNECTED);
-            } 
-            g_string_free(message, TRUE);
-        }
-        g_key_file_free(keyfile);
-        g_free(passwd_attempt);
-        g_free(passwd_file);
+                    close_connection(ci);
+                    log_to_file(ci->socket, NULL, DISCONNECTED);
+                } 
+                g_string_free(message, TRUE);
+            }
+            g_key_file_free(keyfile);
+            g_free(passwd_attempt);
+            g_free(passwd_file);
 
-    // There was some user found with the same username
-    } else {
-        printf("Already logged in from somewhere else.\n");
-        GString * message = g_string_new("Already logged in from somewhere else.\n");
-        SSL_write(ci->ssl, message->str, message->len);
-        g_string_free(message, TRUE);
-    }
-    g_string_free(username, TRUE);
-}
-
-/*
- * This function changes the nick name for a given user. All nick names will have the 
- * appended text '(nick)' to ensure that user names and nick names are not confused 
- * together.
- * @param nick      the new nick name 
- * @param ci        the user requesting for the nick name
- */ 
-void change_nick_name(char * nick, struct client_info * ci)
-{
-    ci->nickname = g_string_new(nick);
-    char * nickappend = " (nick)";
-    ci->nickname = g_string_append(ci->nickname, nickappend);
-    printf("Nick name: %s\n", ci->nickname->str);
-}
-
-/*This function checks for commands from the client, commands start with '/'
- * @param buf       The message buffer.
- * @param ci        The client_info struct.
- */
-void check_command (char * buf, struct client_info * ci)
-{
-    // Get list of all users
-    if ( strcmp(buf, "/who\n") == 0 ) {
-        GString * clients = g_string_new(NULL);
-        g_tree_foreach(client_tree, build_client_list, clients);
-        SSL_write(ci->ssl, clients->str, clients->len);
-        return;
-    }
-
-    if ( strcmp(buf, "/list\n") == 0 ) {
-        // List all available public chat rooms 
-        GString * chat_rooms = g_string_new(NULL);
-        g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
-        SSL_write(ci->ssl, chat_rooms->str, chat_rooms->len);
-        return;
-    } 
-
-    if ( starts_with("/join", buf) == TRUE ) {
-        int i = 5;
-        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-        join_chat_room(g_strchomp(&buf[i]), ci); 
-        return;
-    }
-    
-    if ( starts_with("/nick", buf) == TRUE ) {
-        int i = 5;
-        while (buf[i] != '\0' && isspace(buf[i])) { i++; }
-        change_nick_name(g_strchomp(&buf[i]), ci);
-        return;
-    }
-
-    if ( starts_with("/user", buf) == TRUE ) {
-        GString * message = g_string_new(NULL);
-        if ( ci->authenticated == TRUE ) {
-            message = g_string_append(message, "Already authenticated\n");
-            SSL_write(ci->ssl, message->str, message->len);
-            return;
-        }
-        handle_login(buf, ci);
-        return;
-    }
-    
-    if ( starts_with("/say", buf) == TRUE ) {
-        printf("Inside /say\n");
-        if ( ci->authenticated == FALSE ) {
-            GString * message = g_string_new("Login to send private messages.\n");
+        // There was some user found with the same username
+        } else {
+            printf("Already logged in from somewhere else.\n");
+            GString * message = g_string_new("Already logged in from somewhere else.\n");
             SSL_write(ci->ssl, message->str, message->len);
             g_string_free(message, TRUE);
+        }
+        g_string_free(username, TRUE);
+    }
+
+    /*
+    * This function changes the nick name for a given user. All nick names will have the 
+    * appended text '(nick)' to ensure that user names and nick names are not confused 
+    * together.
+    * @param nick      the new nick name 
+    * @param ci        the user requesting for the nick name
+    */ 
+    void change_nick_name(char * nick, struct client_info * ci)
+    {
+        ci->nickname = g_string_new(nick);
+        char * nickappend = " (nick)";
+        ci->nickname = g_string_append(ci->nickname, nickappend);
+        printf("Nick name: %s\n", ci->nickname->str);
+    }
+
+    /*This function checks for commands from the client, commands start with '/'
+    * @param buf       The message buffer.
+    * @param ci        The client_info struct.
+    */
+    void check_command (char * buf, struct client_info * ci)
+    {
+        // Get list of all users
+        if ( strcmp(buf, "/who\n") == 0 ) {
+            GString * clients = g_string_new(NULL);
+            g_tree_foreach(client_tree, build_client_list, clients);
+            SSL_write(ci->ssl, clients->str, clients->len);
+            g_string_free(clients, TRUE); 
             return;
         }
-        handle_private_message(buf, ci);
-        return;
-    }
 
-    if ( ci->room != NULL ) {
-        // preappend the nick name, user name or 'anonymous' to the message
-        GString * message = g_string_new(NULL);
-        if ( ci->nickname ) {
-            printf("appending nickname to message : '%s'\n", ci->nickname->str);
-            message = g_string_append(message, ci->nickname->str);
-        } else if ( ci->username ) {
-            message = g_string_append(message, ci->username->str);
-        } else {        
-            message = g_string_append(message, "anonymous");
+        if ( strcmp(buf, "/list\n") == 0 ) {
+            // List all available public chat rooms 
+            GString * chat_rooms = g_string_new(NULL);
+            g_tree_foreach(chat_room_tree, build_chat_room_list, chat_rooms);
+            SSL_write(ci->ssl, chat_rooms->str, chat_rooms->len);
+            g_string_free(chat_rooms, TRUE); 
+            return;
+        } 
+
+        if ( starts_with("/join", buf) == TRUE ) {
+            int i = 5;
+            while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+            join_chat_room(g_strchomp(&buf[i]), ci); 
+            return;
         }
-        message = g_string_append(message, ": ");
-        message = g_string_append(message, buf);
+        
+        if ( starts_with("/nick", buf) == TRUE ) {
+            int i = 5;
+            while (buf[i] != '\0' && isspace(buf[i])) { i++; }
+            change_nick_name(g_strchomp(&buf[i]), ci);
+            return;
+        }
 
-        broadcast(message->str, ci); // broadcast message to room
-    }
+        if ( starts_with("/user", buf) == TRUE ) {
+            if ( ci->authenticated == TRUE ) {
+                GString * message = g_string_new(NULL);
+                message = g_string_append(message, "Already authenticated\n");
+                SSL_write(ci->ssl, message->str, message->len);
+                g_string_free(message, TRUE); 
+                return;
+            }
+            handle_login(buf, ci);
+            return;
+        }
+        
+        if ( starts_with("/say", buf) == TRUE ) {
+            printf("Inside /say\n");
+            if ( ci->authenticated == FALSE ) {
+                GString * message = g_string_new("Login to send private messages.\n");
+                SSL_write(ci->ssl, message->str, message->len);
+                g_string_free(message, TRUE);
+                return;
+            }
+            handle_private_message(buf, ci);
+            return;
+        }
+
+        if ( ci->room != NULL ) {
+            // preappend the nick name, user name or 'anonymous' to the message
+            GString * message = g_string_new(NULL);
+            if ( ci->nickname ) {
+                printf("appending nickname to message : '%s'\n", ci->nickname->str);
+                message = g_string_append(message, ci->nickname->str);
+            } else if ( ci->username ) {
+                message = g_string_append(message, ci->username->str);
+            } else {        
+                message = g_string_append(message, "anonymous");
+            }
+            message = g_string_append(message, ": ");
+            message = g_string_append(message, buf);
+
+            broadcast(message->str, ci); // broadcast message to room
+            g_string_free(message, TRUE); 
+        }
    }
 /*
  * This funcion reads from a client, on failure connection is closed.
@@ -766,7 +774,6 @@ void client_tree_value_destroy(gpointer data){
     close(ci->connfd);
     SSL_free(ci->ssl);
     g_free(ci);
-
 }
 
 void sigint_handler(int sig){
