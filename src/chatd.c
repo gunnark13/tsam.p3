@@ -23,6 +23,13 @@
 #include <glib.h>
 #include <time.h>
 
+#define CONNECTED "connected"
+#define DISCONNECTED "disconnected"
+#define AUTHENTICATED "authenticated"
+#define AUTHENTICATION_ERROR "authentication error"
+#define TIMED_OUT "timed out"
+#define WELCOME "Welcome"
+
 #define CERTIFICATE_FILE "fd.crt"
 #define PRIVATE_KEY_FILE "fd.key"
 
@@ -31,13 +38,15 @@
 // Struct to maintain client information.
 struct client_info {
     int connfd; 
-    gboolean active; 
+    gboolean active;
+    int authentication_tries;
+    gboolean authenticated;
     time_t time;
     struct sockaddr_in socket;
     SSL *ssl;
-    char * username;
+    GString * username;
     GString * nickname;
-    char * password;
+    GString * password;
     char * room;
 };
 
@@ -48,6 +57,11 @@ struct chat_room {
 };
 
 // Trees with chat_room or client_info structs.
+struct username_search {
+    GString * username;
+    struct sockaddr_in * key;
+};
+
 GTree *chat_room_tree;
 GTree *client_tree;
 
@@ -80,7 +94,7 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
  * @param addr1     The first address.
  * @param addr2     The second address.
  */
-int sockaddr_in_cmp_serach(const void *addr1, const void *addr2)
+int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
@@ -324,6 +338,103 @@ void broadcast(char * buf, struct client_info * ci)
     }
 }
 
+gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
+{
+    struct client_info * ci = value;
+    struct username_search * us = data;
+    
+    if ( ci->username == NULL ) {
+        return FALSE;
+    }
+
+    if ( g_strcmp0(ci->username->str, us->username->str) == 0 ) {
+        us->key = key;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+void handle_login(char * buf, struct client_info * ci)
+{
+    // Splitting the request string to acces the user name and password fields
+    char ** split_0 = g_strsplit(buf, "/user ", 0);
+    if ( !split_0[1] ) {
+        return;
+    }
+    char ** split_1 = g_strsplit(split_0[1], "/password ", 0);
+    if ( !split_1[0] || !split_1[1] ) {
+        return;
+    }
+    
+    struct username_search * us = g_new0(struct username_search, 1);
+    us->username = g_string_new(split_1[0]);
+    g_tree_foreach(client_tree, find_user_by_username, us);
+    
+    if ( us->key != NULL ) {
+        struct client_info * found_client = g_tree_search(client_tree, sockaddr_in_cmp_search,
+                                                us->key);
+        if ( found_client ) {
+            // Check if the password is not correct
+            if ( g_strcmp0(found_client->password->str, split_1[1]) != 0 ) {
+                GString * message = g_string_new(NULL);
+                ci->authentication_tries += 1;
+                // Log the attempt
+                GString * log_info = g_string_new("authentication error");
+                log_to_file(ci->socket, found_client->username->str, log_info->str);
+                
+                if ( ci->authentication_tries >= 3 ) {
+                    message = g_string_append(message, "To many login attempts\n");
+                    SSL_write(ci->ssl, message->str, message->len);
+                    close(ci->connfd);
+                    SSL_free(ci->ssl);
+                    log_to_file(ci->socket, NULL, DISCONNECTED); 
+                    return;
+                } 
+                return;
+            }
+            
+            if ( found_client->authenticated == TRUE ) {
+                char * message = "Already logged in from somewhere else.\n";
+                SSL_write(ci->ssl, message, strlen(message));
+                return;
+            }
+            // Authentication successfull, update properties for user 
+            ci->authenticated = TRUE;
+            ci->authentication_tries = 0;
+            ci->username = found_client->username;
+            ci->password = found_client->password;
+            ci->socket = found_client->socket;
+            
+            // remove the old instance of the user
+            g_tree_remove(client_tree, &found_client->socket);
+            
+            // remove the old instance of the user from the room he/she
+            // is in and insert the new instance.
+            struct chat_room * room = g_tree_search(chat_room_tree, chat_room_cmp_search,
+                                                    ci->room);
+            if ( room != NULL ) {
+                room->users = g_list_remove(room->users, found_client);
+                room->users = g_list_append(room->users, ci);
+            }
+
+            GString * message = g_string_new("Authentication successfull");
+            SSL_write(ci->ssl, message->str, message->len);
+
+            log_to_file(ci->socket, ci->username->str, "authenticated");
+            return;
+        } else {
+            ci->authenticated = TRUE;
+            ci->authentication_tries = 0;
+            ci->username = g_string_new(split_1[0]); // username
+            ci->password = g_string_new(split_1[1]); // password
+            
+            GString * message = g_string_new("Authentication successfull");
+            SSL_write(ci->ssl, message->str, message->len);
+            return;
+        }
+    } 
+}
+
 /*
  * This function changes the nick name for a given user. All nick names will have the 
  * appended text '(nick)' to ensure that user names and nick names are not confused 
@@ -370,7 +481,7 @@ void check_command (char * buf, struct client_info * ci)
         join_chat_room(g_strchomp(&buf[i]), ci); 
         return;
     }
-
+    
     if ( starts_with("/nick", buf) == TRUE ) {
         int i = 5;
         while (buf[i] != '\0' && isspace(buf[i])) { i++; }
@@ -378,15 +489,27 @@ void check_command (char * buf, struct client_info * ci)
         return;
     }
 
+    if ( starts_with("/user", buf) == TRUE ) {
+        printf("test1\n");
+        GString * message = g_string_new(NULL);
+        if ( ci->authenticated == TRUE ) {
+            message = g_string_append(message, "Already authenticated\n");
+            SSL_write(ci->ssl, message->str, message->len);
+            return;
+        }
+        printf("test2\n");
+        handle_login(buf, ci);
+        return;
+    }
+
     if ( ci->room != NULL ) {
         // preappend the nick name, user name or 'anonymous' to the message
         GString * message = g_string_new(NULL);
-        printf("USER NICKNAME '%s'\n", ci->nickname->str);
         if ( ci->nickname ) {
             printf("appending nickname to message : '%s'\n", ci->nickname->str);
             message = g_string_append(message, ci->nickname->str);
         } else if ( ci->username ) {
-            message = g_string_append(message, ci->username);
+            message = g_string_append(message, ci->username->str);
         } else {        
             message = g_string_append(message, "anonymous");
         }
@@ -614,9 +737,10 @@ int main(int argc, char **argv)
                         ci->time = time(&now);
                         ci->socket = client;
                         ci->ssl = ssl;
+                        ci->authenticated = FALSE;
+                        ci->active = TRUE;
 
-                        char * server_message = "Welcome";
-                        err = SSL_write(ssl, server_message, strlen(server_message)); 
+                        err = SSL_write(ssl, WELCOME, strlen(WELCOME)); 
                         if ( err == -1 ) {
                             printf("Error: SSL_write\n");
                         } else {

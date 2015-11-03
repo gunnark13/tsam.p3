@@ -267,6 +267,11 @@ void readline_callback(char *line)
         strcat(line, "\n");
 
         printf("Line:%s\n", line);
+        snprintf(buffer, 255, "%s\n", line);
+        int err =SSL_write(server_ssl, buffer, sizeof(buffer));
+        if ( err == -1 ) {
+            printf("Error sending login info.\n");
+        }
 
         /* Maybe update the prompt. */
         free(prompt);
@@ -310,7 +315,7 @@ void readline_callback(char *line)
         return;
     }
     /* Sent the buffer to the server. */
-    snprintf(buffer, 255, "Message: %s\n", line);
+    snprintf(buffer, 255, "%s\n", line);
     // write(STDOUT_FILENO, buffer, strlen(buffer));
     SSL_write(server_ssl, buffer, strlen(buffer));
     fsync(STDOUT_FILENO);
