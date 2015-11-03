@@ -400,10 +400,13 @@ void handle_private_message(char * message, struct client_info * ci)
                                                         us->key);
         if ( found_user && found_user->active == 1 ) {
             msg = g_string_prepend(msg,  g_strdup_printf("Private message from: %s\nMessage: ", ci->username->str));
-            
+            // Send the private message to the user 
             SSL_write(found_user->ssl, msg->str, msg->len);
+            return;
         }
     }
+    GString * response = g_string_new("User not found.\n");
+    SSL_write(ci->ssl, response->str, response->len); 
 }
 
 void handle_login(char * buf, struct client_info * ci)
@@ -551,6 +554,12 @@ void check_command (char * buf, struct client_info * ci)
     
     if ( starts_with("/say", buf) == TRUE ) {
         printf("Inside /say\n");
+        if ( ci->authenticated == FALSE ) {
+            GString * message = g_string_new("Login to send private messages.\n");
+            SSL_write(ci->ssl, message->str, message->len);
+            g_string_free(message, TRUE);
+            return;
+        }
         handle_private_message(buf, ci);
         return;
     }
