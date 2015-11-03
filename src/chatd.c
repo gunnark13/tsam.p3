@@ -69,8 +69,8 @@ struct username_search {
 
 SSL_CTX *ssl_ctx;
 
-GTree *chat_room_tree;
-GTree *client_tree;
+static GTree* chat_room_tree;
+static GTree* client_tree;
 
 /* http://stackoverflow.com/questions/2262386/generate-sha256-with-openssl-and-c
  */ 
@@ -90,7 +90,7 @@ void sha256(char *string, char outputBuffer[65])
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
-int sockaddr_in_cmp(const void *addr1, const void *addr2)
+gint sockaddr_in_cmp(const void *addr1, const void *addr2, gpointer userData)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
@@ -144,8 +144,9 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
  * @param room_a        The first room.
  * @param room_2        The second room.
  * @return int          Positive, negative or zero.*/
-int chat_room_cmp(const void * room_a, const void * room_b)
+gint chat_room_cmp(const void * room_a, const void * room_b, gpointer userData)
 {
+    
     const char * a = room_a;
     const char * b = room_b;
     return strcmp(a, b);
@@ -509,6 +510,7 @@ void handle_login(char * buf, struct client_info * ci)
         // else: cheak if password is correct and user name is matching 
         } else if ( g_strcmp0(passwd_attempt, passwd_file) == 0 ) {
             ci->authentication_tries = 0;
+
             ci->authenticated = TRUE;
             ci->username = username;
             GString * message = g_string_new("Authentication successfull");
@@ -733,10 +735,44 @@ gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
     free(ci);
     return FALSE;
 }
+
+void client_tree_key_destroy(gpointer data){
+    struct sockaddr_in * sock = (struct sockaddr_in *) data;
+    g_free(sock);
+}
+
+void chat_room_tree_key_destroy(gpointer data){
+    char * room = (char *) data;
+    g_free(room);
+}
+//test 
+void chat_room_tree_value_destroy(gpointer data){
+    struct chat_room * room = (struct chat_room *) data;
+    GList * rooms = room->users;
+    while(rooms != NULL){
+        GList* next_room = rooms->next;
+        struct sockaddr_in * sock = (struct sockaddr_in *) rooms->data;
+        g_free(sock);
+        room->users = g_list_delete_link(room->users, rooms);
+        rooms = next_room;
+    }
+    g_list_free(room->users);
+    g_free(room);
+}
+
+void client_tree_value_destroy(gpointer data){
+    struct client_info* ci = (struct client_info *) data;
+    SSL_shutdown(ci->ssl);
+    close(ci->connfd);
+    SSL_free(ci->ssl);
+    g_free(ci);
+
+}
+
 void sigint_handler(int sig){
     UNUSED(sig);    
-    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-    g_tree_foreach(client_tree, free_user_tree, NULL);
+   // g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+   // g_tree_foreach(client_tree, free_user_tree, NULL);
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
@@ -824,11 +860,11 @@ int main(int argc, char **argv)
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, MAX_CLIENTS);
-    // Initilize a client tree
-    client_tree = g_tree_new(sockaddr_in_cmp);
-    // Initilize a chat room tree
-    chat_room_tree = g_tree_new(chat_room_cmp);
-    
+    client_tree = g_tree_new_full(sockaddr_in_cmp, NULL, client_tree_key_destroy, client_tree_value_destroy);
+    chat_room_tree = g_tree_new_full(chat_room_cmp , NULL, chat_room_tree_key_destroy, chat_room_tree_value_destroy);
+//    client_tree = g_tree_new(sockaddr_in_cmp);
+//    chat_room_tree = g_tree_new(chat_room_cmp);
+
     // Initilize rooms
     struct chat_room * room1 = g_new0(struct chat_room, 1);
     room1->name = "blue";
