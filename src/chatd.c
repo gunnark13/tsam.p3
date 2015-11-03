@@ -545,6 +545,10 @@ void handle_login(char * buf, struct client_info * ci)
             } 
             g_string_free(message, TRUE);
         }
+        g_key_file_free(keyfile);
+        g_free(passwd_attempt);
+        g_free(passwd_file);
+        
         // There was some user found with the same username
     } else {
         printf("Already logged in from somewhere else.\n");
