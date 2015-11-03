@@ -75,7 +75,7 @@ static GTree* client_tree;
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
-int sockaddr_in_cmp(const void *addr1, const void *addr2)
+gint sockaddr_in_cmp(const void *addr1, const void *addr2, gpointer userData)
 {
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
@@ -129,8 +129,9 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
  * @param room_a        The first room.
  * @param room_2        The second room.
  * @return int          Positive, negative or zero.*/
-int chat_room_cmp(const void * room_a, const void * room_b)
+gint chat_room_cmp(const void * room_a, const void * room_b, gpointer userData)
 {
+    
     const char * a = room_a;
     const char * b = room_b;
     return strcmp(a, b);
@@ -736,8 +737,8 @@ void client_tree_value_destroy(gpointer data){
 
 void sigint_handler(int sig){
     UNUSED(sig);    
-    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-    g_tree_foreach(client_tree, free_user_tree, NULL);
+   // g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+   // g_tree_foreach(client_tree, free_user_tree, NULL);
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
