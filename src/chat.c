@@ -20,6 +20,7 @@
 #include <termios.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <glib.h>
 
 /* Secure socket layer headers */
 #include <openssl/crypto.h>
@@ -87,6 +88,22 @@ void getpasswd(const char *prompt, char *passwd, size_t size)
     }
 }
 
+/* http://stackoverflow.com/questions/2262386/generate-sha256-with-openssl-and-c
+ *
+ */ 
+void sha256(char *string, char outputBuffer[65])
+{
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, string, strlen(string));
+    SHA256_Final(hash, &sha256);
+    int i = 0;
+    for(i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(outputBuffer + (i * 2), "%02x", hash[i]);
+    }
+    outputBuffer[64] = 0;
+}
 
 
 /* If someone kills the client, it should still clean up the readline
@@ -178,7 +195,6 @@ void readline_callback(char *line)
             rl_redisplay();
             return;
         }
-        char *chatroom = strdup(&(line[i]));
         /* Process and send this information to the server. */
         snprintf(buffer, 255, "%s\n", line);
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
@@ -264,12 +280,26 @@ void readline_callback(char *line)
 
         /* Process and send this information to the server. */
         printf("User: %s\nPassword: %s\n", new_user, passwd);
-        strcat(line, "\n/password ");
-        strcat(line, passwd);
-        strcat(line, "\n");
         
-        printf("Line:%s\n", line);
-        snprintf(buffer, 255, "%s\n", line);
+        // Append the password to the salt string
+        char salt_and_pass[4096];
+        memset(&salt_and_pass, 0, sizeof(salt_and_pass));
+        strcat(salt_and_pass, "o7ETqS~=AT1-p8uXv|sLB+-H%hrZ4zi|L49grBBOzqX3AyToFBq=AKmI8x_*");
+        strcat(salt_and_pass, passwd);
+
+        char a[4096];
+        memset(&a, '\0', sizeof(a));
+        
+        sha256(salt_and_pass, a);
+        printf("Salt and pass  : '%s'\n", salt_and_pass); 
+        printf("Hashed_password: '%s'\n", a);
+        
+        GString * message = g_string_new("/user ");
+        message = g_string_append(message, new_user);
+        message = g_string_append(message, "\n/password ");
+        message = g_string_append(message, a);
+        
+        snprintf(buffer, 255, "%s\n", message->str);
         int err = SSL_write(server_ssl, buffer, sizeof(buffer));
         if ( err == -1 ) {
             printf("Error sending login info.\n");
@@ -291,7 +321,6 @@ void readline_callback(char *line)
             rl_redisplay();
             return;
         }
-        char *new_nickname = strdup(&(line[i]));
 
         /* Process send the new nickname to the server */
         snprintf(buffer, 255, "%s\n", line);
