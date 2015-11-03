@@ -20,8 +20,13 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/engine.h>
+#include <openssl/conf.h>
 #include <glib.h>
 #include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <sys/types.h>
 
 #define CONNECTED "connected"
 #define DISCONNECTED "disconnected"
@@ -37,6 +42,7 @@
 #define UNUSED(x) (void)(x)
 #define MAX_CLIENTS 5 
 
+// Struct to maintain client information.
 struct client_info {
     int connfd; 
     int authentication_tries;
@@ -49,15 +55,19 @@ struct client_info {
     char * room;
 };
 
+// Struct to maintain chat room information.
 struct chat_room {
     char * name;
     GList * users;
 };
 
+// Trees with chat_room or client_info structs.
 struct username_search {
     GString * username;
     struct sockaddr_in * key;
 };
+
+SSL_CTX *ssl_ctx;
 
 GTree *chat_room_tree;
 GTree *client_tree;
@@ -103,6 +113,11 @@ int sockaddr_in_cmp(const void *addr1, const void *addr2)
     return 0;
 }
 
+/*
+ * This function compares sockaddresses for search in GTree.
+ * @param addr1     The first address.
+ * @param addr2     The second address.
+ */
 int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
 {
     const struct sockaddr_in *_addr1 = addr1;
@@ -125,6 +140,11 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
     return 0;
 }
 
+/*
+ * This function compares two chat room names.
+ * @param room_a        The first room.
+ * @param room_2        The second room.
+ * @return int          Positive, negative or zero.*/
 int chat_room_cmp(const void * room_a, const void * room_b)
 {
     const char * a = room_a;
@@ -133,9 +153,10 @@ int chat_room_cmp(const void * room_a, const void * room_b)
 }
 
 /*
- * This function compares two rooms for searching chat_room tree.
- * @param room_a        The former room for comparison.
- * @param room_b        The latter room for comparison.
+ * This function compares two chat rooms for searching in a GTree, helper since incorrect decisions
+ * are made in a GTree if the return value from strcmp is used directly Negative becomes pos and vice versa.
+ * @param room_a        The first room.
+ * @param room_b        The second room.
  * @return int          Negative, positive or zero for decision making.
  */
 int chat_room_cmp_search(const void * room_a, const void * room_b)
@@ -212,7 +233,6 @@ void close_connection(struct client_info * ci)
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if ( cr ) {
-            // remove the user from the room
             cr->users = g_list_remove(cr->users, cr);
         }
     }
@@ -283,7 +303,8 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
  * This function builds the client list when requested with /list
  * @param key       The key, for tree.
  * @param value     The chat room that contains the requested list
- * @param data      The char array for concatenating the list to.
+ * @param data      The char array for concatenating the list to.i
+ * @return          Boolean for GTraverseFunc
  */
 gboolean build_chat_room_list (gpointer key, gpointer value, gpointer data)
 {
@@ -322,6 +343,7 @@ void join_chat_room(char * room_name, struct client_info * ci)
         // The client is already in a room, find that room "old_room".
         struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if( old_room != NULL ) {
+            // TODO Free memory
             printf("removing user for his old room\n");
             old_room->users = g_list_remove(old_room->users, ci);
         } else {
@@ -422,7 +444,7 @@ void handle_private_message(char * message, struct client_info * ci)
 
 void handle_login(char * buf, struct client_info * ci)
 {
-    // Splitting the request string to acces the user name and password fields
+    // Splitting the request string to access the user name and password fields
     char ** split_0 = g_strsplit(buf, "/user ", 0);
     if ( !split_0[1] ) {
         return;
@@ -545,6 +567,10 @@ void change_nick_name(char * nick, struct client_info * ci)
     printf("Nick name: %s\n", ci->nickname->str);
 }
 
+/*This function checks for commands from the client, commands start with '/'
+ * @param buf       The message buffer.
+ * @param ci        The client_info struct.
+ */
 void check_command (char * buf, struct client_info * ci)
 {
     // Get list of all users
@@ -616,8 +642,14 @@ void check_command (char * buf, struct client_info * ci)
 
         broadcast(message->str, ci); // broadcast message to room
     }
-}
-
+   }
+/*
+ * This funcion reads from a client, on failure connection is closed.
+ * @param key       The key for GTree, unused.
+ * @param value     The client_info struct.
+ * @param data      The fd_set.
+ * @return          Boolean for GTraverseFunc.
+ */
 gboolean read_from_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -635,7 +667,8 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
                                                         ci->room);
                 if ( cr != NULL ) {
                     printf("Removeing user from room.\n");
-                    cr->users = g_list_remove(cr->users, ci);
+                    // TODO Free memory
+                    cr->users = g_list_remove(cr->users, cr);
                 }
             }
             // Close the connection to the user
@@ -653,6 +686,10 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/*This function checks for a client timeout.
+ * @param key       The key for GTree, unused.
+ * @param value     The client_info struct
+ * @param data      Unused*/
 gboolean timeout_client(gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
@@ -674,18 +711,69 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+gboolean free_chat_tree(gpointer key, gpointer value, gpointer data){
+    UNUSED(key);
+    UNUSED(data);
+    struct chat_room * room = value;
+    GList *userList = room->users;
+    GList *next;
+    while(userList != NULL){
+        next = userList->next;
+        free(userList->data);
+        room->users = g_list_delete_link(room->users, userList);
+        userList = next;
+    }
+    return FALSE;
+}
+
+
+gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
+    UNUSED(key);
+    UNUSED(data);
+    struct client_info * ci = value;
+    free(ci);
+    return FALSE;
+}
+void sigint_handler(int sig){
+    UNUSED(sig);    
+    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+    g_tree_foreach(client_tree, free_user_tree, NULL);
+
+    g_tree_destroy(chat_room_tree);
+    g_tree_destroy(client_tree);
+    SSL_CTX_free(ssl_ctx);
+    RAND_cleanup();
+    ENGINE_cleanup();
+    CONF_modules_unload(1);
+    CONF_modules_free();
+    EVP_cleanup();
+    ERR_free_strings();
+    ERR_remove_state(0);
+    CRYPTO_cleanup_all_ex_data();
+                                        
+    exit(0);
+
+}
+/* Server main function.
+ * @param argc      The argument count.
+ * @param **argv    The argument vector.
+ * @return          Exit code.
+ */
 int main(int argc, char **argv)
 {
+
+    // Install the sigint handler
+    signal(SIGINT, sigint_handler); /* ctrl-c */
     printf("Number of arguments %d\n", argc);
     printf("Portnumber : %s\n", argv[1]);
+
+    SSL_library_init(); /* load encryption & hash algorithms for SSL */                
+    SSL_load_error_strings(); /* load the error strings for good error reporting */
+    ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
     int my_port = atoi(argv[1]);
 
     struct sockaddr_in server, client;
 
-    SSL_library_init(); /* load encryption & hash algorithms for SSL */                
-    SSL_load_error_strings(); /* load the error strings for good error reporting */
-
-    SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
 
     if ( !ssl_ctx ) {
         ERR_print_errors_fp(stderr);

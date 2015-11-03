@@ -3,4 +3,8 @@
 /src/chatd
 *.swp
 log.txt
+<<<<<<< HEAD
 passwords.ini
+=======
+valgrind.sh
+>>>>>>> c147afd33ef5009229011b4dd26b14389ec8bd9f
