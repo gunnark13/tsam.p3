@@ -462,7 +462,7 @@ void handle_login(char * buf, struct client_info * ci)
                         close_connection(ci);
                     log_to_file(ci->socket, NULL, DISCONNECTED); 
                     return;
-                } 
+                }
                 return;
             }
             
