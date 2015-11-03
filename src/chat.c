@@ -239,8 +239,13 @@ void readline_callback(char *line)
         char *receiver = strndup(&(line[i]), j - i - 1);
         char *message = strndup(&(line[j]), j - i - 1);
 
+        snprintf(buffer, 255, "%s\n", line);
         /* Send private message to receiver. */
-
+        snprintf(buffer, 255, "%s\n", line);
+        int err = SSL_write(server_ssl, buffer, strlen(buffer));
+        if( err == -1 ) {
+            printf("Error sending private message.\n");
+        }
         return;
     }
     if (strncmp("/user", line, 5) == 0) {
@@ -293,9 +298,6 @@ void readline_callback(char *line)
         int err = SSL_write(server_ssl, buffer, strlen(buffer));
         if( err == -1 ) {
             printf("Error setting this nickname.\n");
-        }
-        if( !prompt ) {
-            printf("prompt is null \n");
         }
         free(prompt);
         prompt = NULL;
