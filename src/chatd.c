@@ -545,40 +545,6 @@ void handle_login(char * buf, struct client_info * ci)
             } 
             g_string_free(message, TRUE);
         }
-        g_string_free(username, TRUE);
-        g_strfreev(split_0);
-        g_strfreev(split_1);
-    }
-
-    /*
-    * This function changes the nick name for a given user. All nick names will have the 
-    * appended text '(nick)' to ensure that user names and nick names are not confused 
-    * together.
-    * @param nick      the new nick name 
-    * @param ci        the user requesting for the nick name
-    */ 
-    void change_nick_name(char * nick, struct client_info * ci)
-    {
-        ci->nickname = g_string_new(nick);
-        char * nickappend = " (nick)";
-        ci->nickname = g_string_append(ci->nickname, nickappend);
-        printf("Nick name: %s\n", ci->nickname->str);
-    }
-
-    /*This function checks for commands from the client, commands start with '/'
-    * @param buf       The message buffer.
-    * @param ci        The client_info struct.
-    */
-    void check_command (char * buf, struct client_info * ci)
-    {
-        // Get list of all users
-        if ( strcmp(buf, "/who\n") == 0 ) {
-            GString * clients = g_string_new(NULL);
-            g_tree_foreach(client_tree, build_client_list, clients);
-            SSL_write(ci->ssl, clients->str, clients->len);
-            g_string_free(clients, TRUE); 
-            return;
-        }
         // There was some user found with the same username
     } else {
         printf("Already logged in from somewhere else.\n");
@@ -587,6 +553,9 @@ void handle_login(char * buf, struct client_info * ci)
         g_string_free(message, TRUE);
     }
     g_string_free(username, TRUE);
+    g_string_free(username, TRUE);
+    g_strfreev(split_0);
+    g_strfreev(split_1);
 }
 
 /*
@@ -602,7 +571,6 @@ void change_nick_name(char * nick, struct client_info * ci)
     char * nickappend = " (nick)";
     ci->nickname = g_string_append(ci->nickname, nickappend);
     printf("Nick name: %s\n", ci->nickname->str);
-
 }
 
 /*This function checks for commands from the client, commands start with '/'
@@ -813,13 +781,8 @@ void client_tree_value_destroy(gpointer data){
 
 void sigint_handler(int sig){
     UNUSED(sig);    
-<<<<<<< HEAD
-   //g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-   //g_tree_foreach(client_tree, free_user_tree, NULL);
-=======
     g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
     g_tree_foreach(client_tree, free_user_tree, NULL);
->>>>>>> 8b0833fab453d863e528ee2f692b418f7385ed97
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
