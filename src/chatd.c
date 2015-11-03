@@ -188,6 +188,10 @@ gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/* This function closes the connection to the user and sets the user's
+ * properties to the appropiate values for a logged out user.
+ * @param ci The client_info struct for the user
+ */ 
 void close_connection(struct client_info * ci) 
 {
     ci->active = FALSE;
@@ -371,6 +375,37 @@ gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+void handle_private_message(char * message, struct client_info * ci)
+{
+    char ** split = g_strsplit(message, "/say", 0);
+    if ( !split[1] ) {
+        return;
+    }
+    char ** split_1 = g_strsplit(split[1], " ", 0);
+    if ( !split_1[1] || !split_1[2] ) {
+        return;
+    }
+    
+    GString * user = g_string_new(g_strchomp(split_1[1]));
+    GString * msg = g_string_new(g_strchomp(split_1[2]));
+    
+    printf("user : '%s'\n", user->str);
+    printf("msg : '%s'\n", msg->str);
+
+    struct username_search * us = g_new0(struct username_search, 1);
+    us->username = user;
+    g_tree_foreach(client_tree, find_user_by_username, us);
+    if ( us->key ) {
+        struct client_info * found_user = g_tree_search(client_tree, sockaddr_in_cmp_search, 
+                                                        us->key);
+        if ( found_user && found_user->active == 1 ) {
+            msg = g_string_prepend(msg,  g_strdup_printf("Private message from: %s\nMessage: ", ci->username->str));
+            
+            SSL_write(found_user->ssl, msg->str, msg->len);
+        }
+    }
+}
+
 void handle_login(char * buf, struct client_info * ci)
 {
     // Splitting the request string to acces the user name and password fields
@@ -407,7 +442,7 @@ void handle_login(char * buf, struct client_info * ci)
                     printf("To many login attempts\n");
                     message = g_string_append(message, "To many login attempts\n");
                     SSL_write(ci->ssl, message->str, message->len);
-                    close_connection(ci);
+                        close_connection(ci);
                     log_to_file(ci->socket, NULL, DISCONNECTED); 
                     return;
                 } 
@@ -511,6 +546,12 @@ void check_command (char * buf, struct client_info * ci)
             return;
         }
         handle_login(buf, ci);
+        return;
+    }
+    
+    if ( starts_with("/say", buf) == TRUE ) {
+        printf("Inside /say\n");
+        handle_private_message(buf, ci);
         return;
     }
 
