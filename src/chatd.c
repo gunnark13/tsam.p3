@@ -70,8 +70,8 @@ struct username_search {
 
 SSL_CTX *ssl_ctx;
 
-GTree *chat_room_tree;
-GTree *client_tree;
+static GTree* chat_room_tree;
+static GTree* client_tree;
 
 /* This can be used to build instances of GTree that index on
    the address of a connection. */
@@ -595,8 +595,6 @@ void check_command (char * buf, struct client_info * ci)
     if ( ci->room != NULL ) {
         // preappend the nick name, user name or 'anonymous' to the message
         GString * message = g_string_new(NULL);
-        //printf("username : %s \n", ci->username);
-        printf("nickname : %s \n", ci->nickname->str);
         if ( ci->nickname ) {
             printf("appending nickname to message : '%s'\n", ci->nickname->str);
             message = g_string_append(message, ci->nickname->str);
@@ -702,6 +700,40 @@ gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
     free(ci);
     return FALSE;
 }
+
+void client_tree_key_destroy(gpointer data){
+    struct sockaddr_in * sock = (struct sockaddr_in *) data;
+    g_free(sock);
+}
+
+void chat_room_tree_key_destroy(gpointer data){
+    char * room = (char *) data;
+    g_free(room);
+}
+//test 
+void chat_room_tree_value_destroy(gpointer data){
+    struct chat_room * room = (struct chat_room *) data;
+    GList * rooms = room->users;
+    while(rooms != NULL){
+        GList* next_room = rooms->next;
+        struct sockaddr_in * sock = (struct sockaddr_in *) rooms->data;
+        g_free(sock);
+        room->users = g_list_delete_link(room->users, rooms);
+        rooms = next_room;
+    }
+    g_list_free(room->users);
+    g_free(room);
+}
+
+void client_tree_value_destroy(gpointer data){
+    struct client_info* ci = (struct client_info *) data;
+    SSL_shutdown(ci->ssl);
+    close(ci->connfd);
+    SSL_free(ci->ssl);
+    g_free(ci);
+
+}
+
 void sigint_handler(int sig){
     UNUSED(sig);    
     g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
@@ -793,11 +825,10 @@ int main(int argc, char **argv)
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, MAX_CLIENTS);
-
-    client_tree = g_tree_new(sockaddr_in_cmp);
-    
-    chat_room_tree = g_tree_new(chat_room_cmp);
-    
+    client_tree = g_tree_new_full(sockaddr_in_cmp, NULL, client_tree_key_destroy, client_tree_value_destroy);
+    chat_room_tree = g_tree_new_full(chat_room_cmp , NULL, chat_room_tree_key_destroy, chat_room_tree_value_destroy);
+//    client_tree = g_tree_new(sockaddr_in_cmp);
+//    chat_room_tree = g_tree_new(chat_room_cmp);
     // Initilize rooms
     struct chat_room * room1 = g_new0(struct chat_room, 1);
     room1->name = "blue";
