@@ -20,8 +20,13 @@
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/engine.h>
+#include <openssl/conf.h>
 #include <glib.h>
 #include <time.h>
+#include <signal.h>
+#include <errno.h>
+#include <sys/types.h>
 
 #define CONNECTED "connected"
 #define DISCONNECTED "disconnected"
@@ -35,6 +40,7 @@
 
 #define UNUSED(x) (void)(x)
 #define MAX_CLIENTS 5 
+
 // Struct to maintain client information.
 struct client_info {
     int connfd; 
@@ -61,6 +67,8 @@ struct username_search {
     GString * username;
     struct sockaddr_in * key;
 };
+
+SSL_CTX *ssl_ctx;
 
 GTree *chat_room_tree;
 GTree *client_tree;
@@ -214,7 +222,6 @@ void close_connection(struct client_info * ci)
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if ( cr ) {
-            // remove the user from the room
             cr->users = g_list_remove(cr->users, cr);
         }
     }
@@ -325,6 +332,7 @@ void join_chat_room(char * room_name, struct client_info * ci)
         // The client is already in a room, find that room "old_room".
         struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if( old_room != NULL ) {
+            // TODO Free memory
             printf("removing user for his old room\n");
             old_room->users = g_list_remove(old_room->users, ci);
         } else {
@@ -425,7 +433,7 @@ void handle_private_message(char * message, struct client_info * ci)
 
 void handle_login(char * buf, struct client_info * ci)
 {
-    // Splitting the request string to acces the user name and password fields
+    // Splitting the request string to access the user name and password fields
     char ** split_0 = g_strsplit(buf, "/user ", 0);
     if ( !split_0[1] ) {
         return;
@@ -458,6 +466,7 @@ void handle_login(char * buf, struct client_info * ci)
                 if ( ci->authentication_tries >= 3 ) {
                     printf("To many login attempts\n");
                     message = g_string_append(message, "To many login attempts\n");
+                    // TODO Free memory
                     SSL_write(ci->ssl, message->str, message->len);
                         close_connection(ci);
                     log_to_file(ci->socket, NULL, DISCONNECTED); 
@@ -623,7 +632,8 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
                                                         ci->room);
                 if ( cr != NULL ) {
                     printf("Removeing user from room.\n");
-                    cr->users = g_list_remove(cr->users, ci);
+                    // TODO Free memory
+                    cr->users = g_list_remove(cr->users, cr);
                 }
             }
             // Close the connection to the user
@@ -666,6 +676,49 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+gboolean free_chat_tree(gpointer key, gpointer value, gpointer data){
+    UNUSED(key);
+    UNUSED(data);
+    struct chat_room * room = value;
+    GList *userList = room->users;
+    GList *next;
+    while(userList != NULL){
+        next = userList->next;
+        free(userList->data);
+        room->users = g_list_delete_link(room->users, userList);
+        userList = next;
+    }
+    return FALSE;
+}
+
+
+gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
+    UNUSED(key);
+    UNUSED(data);
+    struct client_info * ci = value;
+    free(ci);
+    return FALSE;
+}
+void sigint_handler(int sig){
+    UNUSED(sig);    
+    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+    g_tree_foreach(client_tree, free_user_tree, NULL);
+
+    g_tree_destroy(chat_room_tree);
+    g_tree_destroy(client_tree);
+    SSL_CTX_free(ssl_ctx);
+    RAND_cleanup();
+    ENGINE_cleanup();
+    CONF_modules_unload(1);
+    CONF_modules_free();
+    EVP_cleanup();
+    ERR_free_strings();
+    ERR_remove_state(0);
+    CRYPTO_cleanup_all_ex_data();
+                                        
+    exit(0);
+
+}
 /* Server main function.
  * @param argc      The argument count.
  * @param **argv    The argument vector.
@@ -673,16 +726,19 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
  */
 int main(int argc, char **argv)
 {
+
+    // Install the sigint handler
+    signal(SIGINT, sigint_handler); /* ctrl-c */
     printf("Number of arguments %d\n", argc);
     printf("Portnumber : %s\n", argv[1]);
+
+    SSL_library_init(); /* load encryption & hash algorithms for SSL */                
+    SSL_load_error_strings(); /* load the error strings for good error reporting */
+    ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
     int my_port = atoi(argv[1]);
 
     struct sockaddr_in server, client;
 
-    SSL_library_init(); /* load encryption & hash algorithms for SSL */                
-    SSL_load_error_strings(); /* load the error strings for good error reporting */
-
-    SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv3_method()); // initilize ssl context
 
     if ( !ssl_ctx ) {
         ERR_print_errors_fp(stderr);
