@@ -785,8 +785,8 @@ void client_tree_value_destroy(gpointer data){
 
 void sigint_handler(int sig){
     UNUSED(sig);    
-    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-    g_tree_foreach(client_tree, free_user_tree, NULL);
+   //  g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+   //  g_tree_foreach(client_tree, free_user_tree, NULL);
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
