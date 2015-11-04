@@ -92,6 +92,7 @@ void sha256(char *string, char outputBuffer[65])
    the address of a connection. */
 gint sockaddr_in_cmp(const void *addr1, const void *addr2, gpointer userData)
 {
+    UNUSED(userData);
     const struct sockaddr_in *_addr1 = addr1;
     const struct sockaddr_in *_addr2 = addr2;
 
@@ -146,6 +147,7 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
  * @return int          Positive, negative or zero.*/
 gint chat_room_cmp(const void * room_a, const void * room_b, gpointer userData)
 {
+    UNUSED(userData);
     const char * a = room_a;
     const char * b = room_b;
     return strcmp(a, b);
@@ -228,26 +230,15 @@ void close_connection(struct client_info * ci)
 {
     ci->authenticated = FALSE;
     ci->authentication_tries = 0;
-    printf("test1\n");
     if ( ci->room ) {
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
-        printf("test11\n");
         if ( cr ) {
-            printf("test12\n");
             cr->users = g_list_remove(cr->users, cr);
         }
     }
-    printf("test2\n");
     // Remove the client from the client tree
     g_tree_remove(client_tree, &ci->socket);
-    printf("test3\n");
-    // Close the connection
-    // close(ci->connfd);
-    // SSL_shutdown(ci->ssl);
-    // SSL_free(ci->ssl);
-    // printf("test4\n");
-    // g_free(ci); 
 }
 
 /* This function logs an activity to the log file.
@@ -289,30 +280,22 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
     struct client_info * ci = value;
-    printf("Test1\n");
     GString * users = data;
-    printf("Test2\n");
-    printf("Test3\n");
     users = g_string_append(users, inet_ntoa(ci->socket.sin_addr));
-    printf("Test4\n");
     gchar * port = g_strdup_printf(":%i ", ci->socket.sin_port);
     users = g_string_append(users, port);
     g_free(port);
     // Check if the user has a username
-    printf("Test5\n");
     if ( ci->username ) {
         users = g_string_append(users, ci->username->str);
     }
     // Check if the user has a room
-    printf("Test6\n");
     if ( ci->room ) {
         gchar * room = g_strdup_printf(" room='%s'", ci->room);
         users = g_string_append(users, room); 
         g_free(room);
     }
-    printf("Test7\n");
     users = g_string_append(users, "\n");
-    // g_string_free(users, FALSE);
     return FALSE;
 }
 
@@ -360,7 +343,6 @@ void join_chat_room(char * room_name, struct client_info * ci)
         // The client is already in a room, find that room "old_room".
         struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if( old_room != NULL ) {
-            // TODO Free memory
             printf("removing user for his old room\n");
             old_room->users = g_list_remove(old_room->users, ci);
         } else {
@@ -409,6 +391,11 @@ void broadcast(char * buf, struct client_info * ci)
     }
 }
 
+/* This function searches for a active user with a matching username
+ * @param key       the key of the current user in the client tree
+ * @param value     the value of the current user in the client tree
+ * @param data      the username to be found
+ */ 
 gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
 {
     struct client_info * ci = value;
@@ -425,6 +412,13 @@ gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
+/* This function handles the private messages on the chat server. The function parses the 
+ * user request data and finds the user the client wants to send a private message to
+ * if no user is found online with the matching user name the server send back a response
+ * to the client. If the user is found the private message is sent forward to the user.
+ * @param message   the clients request data
+ * @param ci        the client info data
+ */ 
 void handle_private_message(char * message, struct client_info * ci)
 {
     char ** split = g_strsplit(message, "/say", 0);
@@ -454,22 +448,31 @@ void handle_private_message(char * message, struct client_info * ci)
         struct client_info * found_user = g_tree_search(client_tree, sockaddr_in_cmp_search, 
                 us->key);
         if ( found_user ) {
-            msg = g_string_prepend(msg,  g_strdup_printf("Private message from: %s\nMessage: ", ci->username->str));
+            gchar * private_message = g_strdup_printf("Private message from: %s\nMessage: ", ci->username->str); 
+            msg = g_string_prepend(msg, private_message);
+            g_free(private_message);
             // Send the private message to the user 
             SSL_write(found_user->ssl, msg->str, msg->len);
-            return;
         }
+    } else { 
+        GString * response = g_string_new("User not found.\n");
+        SSL_write(ci->ssl, response->str, response->len);
+        g_string_free(response, TRUE);
     }
-    GString * response = g_string_new("User not found.\n");
-    SSL_write(ci->ssl, response->str, response->len);
-
-    // g_string_free(us->username, TRUE);
-    // g_free(us);
-    // g_string_free(user, TRUE);
-    // g_string_free(msg, TRUE);
-    // g_string_free(response, TRUE);
+    g_string_free(us->username, TRUE);
+    g_free(us);
+    g_string_free(user, TRUE);
+    g_string_free(msg, TRUE);
 }
 
+/* This function handles the login into the chat server, the function parses the user data 
+ * sent and hashes the user's password. It checks first if there is another user active with
+ * the same username logged on, if so then the user is logged on from somewhere else. If the 
+ * user is not found online the password file is checked if user exists there. If no user 
+ * exists the user is created other wise password is checked if it matches.
+ * @param buf   the request sent by the user 
+ * @param ci    the client info struct data
+ */ 
 void handle_login(char * buf, struct client_info * ci)
 {
     // Splitting the request string to access the user name and password fields
@@ -495,9 +498,7 @@ void handle_login(char * buf, struct client_info * ci)
     strcat(salt, "DvoS8URnIP+2%ts%AeyLenlbin^cLxb%~vegmcNEDRvjOPSB4*ItTK0BVDMK");
     strcat(salt, password->str);
     sha256(salt, hash_p);
-
-    // g_string_free(password, TRUE);
-
+    
     // Find a active user with the same user name
     struct username_search * us = g_new0(struct username_search, 1);
     us->username = g_string_new(username->str);
@@ -541,10 +542,8 @@ void handle_login(char * buf, struct client_info * ci)
             GString * message = g_string_new("New user create successfully");
             SSL_write(ci->ssl, message->str, message->len);
             // Log to file
-            GString * log_info = g_string_new("authenticated");
-            log_to_file(ci->socket, ci->username->str, log_info->str);
+            log_to_file(ci->socket, ci->username->str, AUTHENTICATED);
             g_string_free(message, TRUE);
-            g_string_free(log_info, TRUE);
 
             // else: cheak if password is correct and user name is matching 
         } else if ( g_strcmp0(passwd_attempt, passwd_file) == 0 ) {
@@ -592,8 +591,7 @@ void handle_login(char * buf, struct client_info * ci)
     g_string_free(password, TRUE);
 }
 
-/*
- * This function changes the nick name for a given user. All nick names will have the 
+/* This function changes the nick name for a given user. All nick names will have the 
  * appended text '(nick)' to ensure that user names and nick names are not confused 
  * together.
  * @param nick      the new nick name 
@@ -613,7 +611,7 @@ void change_nick_name(char * nick, struct client_info * ci)
     printf("Nick name: %s\n", ci->nickname->str);
 }
 
-/*This function checks for commands from the client, commands start with '/'
+/* This function checks for commands from the client, commands start with '/'
  * @param buf       The message buffer.
  * @param ci        The client_info struct.
  */
@@ -717,15 +715,12 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
                         ci->room);
                 if ( cr != NULL ) {
                     printf("Removeing user from room.\n");
-                    // TODO Free memory
                     cr->users = g_list_remove(cr->users, cr);
                 }
             }
             // Close the connection to the user
-            printf("test\n");
             close_connection(ci);
-            char * log_info = "disconnected";
-            log_to_file(ci->socket, NULL, log_info);
+            log_to_file(ci->socket, NULL, DISCONNECTED);
         } else {
             buf[err] = '\0';
             printf("Received %d chars:'%s'\n", err, buf);
@@ -762,57 +757,28 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     return FALSE;
 }
 
-gboolean free_chat_tree(gpointer key, gpointer value, gpointer data){
-    UNUSED(key);
-    UNUSED(data);
-    struct chat_room * room = value;
-    GList *userList = room->users;
-    GList *next;
-    while(userList != NULL){
-        next = userList->next;
-        // free(userList->data);
-        room->users = g_list_delete_link(room->users, userList);
-        userList = next;
-    }
-    return FALSE;
-}
-
-
-gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
-    UNUSED(key);
-    UNUSED(data);
-    struct client_info * ci = value;
-    // free(ci);
-    return FALSE;
-}
-
-void client_tree_key_destroy(gpointer data){
-    printf("Client tree key test1\n");
-    // struct sockaddr_in * sock = (struct sockaddr_in *) data;
-    // g_free(sock);
-}
-
-void chat_room_tree_key_destroy(gpointer data){
-    // char * room = (char *) data;
-    // g_free(room);
-}
-//test 
-void chat_room_tree_value_destroy(gpointer data){
+/* This function cleans and frees the memmory for a given chat_room
+ * data in the chat_room_tree
+ * @param data  pointer to the chat_room to be destroyed
+ */ 
+void chat_room_tree_value_destroy(gpointer data)
+{
     struct chat_room * room = (struct chat_room *) data;
     GList * rooms = room->users;
     while(rooms != NULL){
         GList* next_room = rooms->next;
-        struct sockaddr_in * sock = (struct sockaddr_in *) rooms->data;
-        // g_free(sock);
         room->users = g_list_delete_link(room->users, rooms);
         rooms = next_room;
     }
-    // g_list_free(room->users);
     g_free(room);
 }
 
-void client_tree_value_destroy(gpointer data){
-    printf("Client tree value test1\n");
+/* This function cleans and frees the memmory for a given client_info
+ * data in the client_tree
+ * @param data  pointer to the client info to be destroyed
+ */ 
+void client_tree_value_destroy(gpointer data)
+{
     struct client_info* ci = (struct client_info *) data;
     SSL_shutdown(ci->ssl);
     close(ci->connfd);
@@ -822,12 +788,12 @@ void client_tree_value_destroy(gpointer data){
     g_free(ci);
 }
 
-void sigint_handler(int sig){
+/* This function gets called when the server exits.
+ * When CTRL-C is pressed
+ */
+void sigint_handler(int sig)
+{
     UNUSED(sig);    
-    printf("SIGINT HANDLER\n");
-    // g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-    // g_tree_foreach(client_tree, free_user_tree, NULL);
-
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
     SSL_CTX_free(ssl_ctx);
@@ -839,10 +805,9 @@ void sigint_handler(int sig){
     ERR_free_strings();
     ERR_remove_state(0);
     CRYPTO_cleanup_all_ex_data();
-
     exit(0);
-
 }
+
 /* Server main function.
  * @param argc      The argument count.
  * @param **argv    The argument vector.
@@ -850,7 +815,6 @@ void sigint_handler(int sig){
  */
 int main(int argc, char **argv)
 {
-
     // Install the sigint handler
     signal(SIGINT, sigint_handler); /* ctrl-c */
     printf("Number of arguments %d\n", argc);
@@ -862,7 +826,6 @@ int main(int argc, char **argv)
     int my_port = atoi(argv[1]);
 
     struct sockaddr_in server, client;
-
 
     if ( !ssl_ctx ) {
         ERR_print_errors_fp(stderr);
@@ -914,10 +877,8 @@ int main(int argc, char **argv)
      * 1 connection to queue for simplicity.
      */
     listen(sockfd, MAX_CLIENTS);
-    client_tree = g_tree_new_full(sockaddr_in_cmp, NULL, client_tree_key_destroy, client_tree_value_destroy);
-    chat_room_tree = g_tree_new_full(chat_room_cmp , NULL, chat_room_tree_key_destroy, chat_room_tree_value_destroy);
-    //    client_tree = g_tree_new(sockaddr_in_cmp);
-    //    chat_room_tree = g_tree_new(chat_room_cmp);
+    client_tree = g_tree_new_full(sockaddr_in_cmp, NULL, NULL, client_tree_value_destroy);
+    chat_room_tree = g_tree_new_full(chat_room_cmp , NULL, NULL, chat_room_tree_value_destroy);
 
     // Initilize rooms
     struct chat_room * room1 = g_new0(struct chat_room, 1);
@@ -989,8 +950,7 @@ int main(int argc, char **argv)
                         } else {
                             g_tree_insert(client_tree, &ci->socket, ci);
                             printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
-                            char * log_info = "connected";
-                            log_to_file(client, NULL, log_info);
+                            log_to_file(client, NULL, CONNECTED);
                         }
                     }
                 }

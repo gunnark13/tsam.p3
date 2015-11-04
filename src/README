@@ -1,6 +1,23 @@
-
-
-Protocol
+# Protocol
+---
+## Secure chat system
 ========
 
-Explain your protocol here.
+## Password questsions
+---
+### Where are the passwords stored ?
+The password are stored in the password.ini file, The passwords are first hashed client side with the preappened salt string and sent to the server on a encoded OPENSSL line. When the password is hashed again on the server with another preappended salt string and stored in the password.ini file.
+
+### Where are the salt string stored ?
+The salt strings are harcoded in the source code.
+
+### Why do you send the hashed password ? 
+We can not know for sure what the server does with the password string. Therefore we hash it client side and send it to the server.
+
+### What are the security implication of your decision?
+The server doesn't know the password of it's clients.
+
+## Private messages questions
+---
+### Should private messages be logged?
+Not while we don't have a good method to store and retrieve the messages. The perks of our decision is that messages are not rechable for unauthorized malicious clients. The downside to our decision is that the client has no backup for his private message history. 
