@@ -146,7 +146,6 @@ int sockaddr_in_cmp_search(const void *addr1, const void *addr2)
  * @return int          Positive, negative or zero.*/
 gint chat_room_cmp(const void * room_a, const void * room_b, gpointer userData)
 {
-
     const char * a = room_a;
     const char * b = room_b;
     return strcmp(a, b);
@@ -229,20 +228,26 @@ void close_connection(struct client_info * ci)
 {
     ci->authenticated = FALSE;
     ci->authentication_tries = 0;
+    printf("test1\n");
     if ( ci->room ) {
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
+        printf("test11\n");
         if ( cr ) {
+            printf("test12\n");
             cr->users = g_list_remove(cr->users, cr);
         }
     }
+    printf("test2\n");
     // Remove the client from the client tree
     g_tree_remove(client_tree, &ci->socket);
+    printf("test3\n");
     // Close the connection
-    close(ci->connfd);
-    SSL_shutdown(ci->ssl);
-    SSL_free(ci->ssl);
-    g_free(ci); 
+    // close(ci->connfd);
+    // SSL_shutdown(ci->ssl);
+    // SSL_free(ci->ssl);
+    // printf("test4\n");
+    // g_free(ci); 
 }
 
 /* This function logs an activity to the log file.
@@ -284,18 +289,30 @@ gboolean build_client_list (gpointer key, gpointer value, gpointer data)
 {
     UNUSED(key);
     struct client_info * ci = value;
+    printf("Test1\n");
     GString * users = data;
-    struct sockaddr_in socket = ci->socket;
-    users = g_string_append(users, inet_ntoa(socket.sin_addr));
-    users = g_string_append(users, g_strdup_printf(":%i ", socket.sin_port));
+    printf("Test2\n");
+    printf("Test3\n");
+    users = g_string_append(users, inet_ntoa(ci->socket.sin_addr));
+    printf("Test4\n");
+    gchar * port = g_strdup_printf(":%i ", ci->socket.sin_port);
+    users = g_string_append(users, port);
+    g_free(port);
     // Check if the user has a username
+    printf("Test5\n");
     if ( ci->username ) {
         users = g_string_append(users, ci->username->str);
     }
     // Check if the user has a room
+    printf("Test6\n");
     if ( ci->room ) {
-        users = g_string_append(users, g_strdup_printf(" room='%s'", ci->room)); 
+        gchar * room = g_strdup_printf(" room='%s'", ci->room);
+        users = g_string_append(users, room); 
+        g_free(room);
     }
+    printf("Test7\n");
+    users = g_string_append(users, "\n");
+    // g_string_free(users, FALSE);
     return FALSE;
 }
 
@@ -412,21 +429,26 @@ void handle_private_message(char * message, struct client_info * ci)
 {
     char ** split = g_strsplit(message, "/say", 0);
     if ( !split[1] ) {
+        g_strfreev(split);
         return;
     }
     char ** split_1 = g_strsplit(split[1], " ", 0);
     if ( !split_1[1] || !split_1[2] ) {
+        g_strfreev(split);
+        g_strfreev(split_1);
         return;
     }
 
     GString * user = g_string_new(g_strchomp(split_1[1]));
     GString * msg = g_string_new(g_strchomp(split_1[2]));
-
+    g_strfreev(split);
+    g_strfreev(split_1);
+    
     printf("user : '%s'\n", user->str);
     printf("msg : '%s'\n", msg->str);
 
     struct username_search * us = g_new0(struct username_search, 1);
-    us->username = user;
+    us->username = g_string_new(user->str);
     g_tree_foreach(client_tree, find_user_by_username, us);
     if ( us->key ) {
         struct client_info * found_user = g_tree_search(client_tree, sockaddr_in_cmp_search, 
@@ -441,11 +463,11 @@ void handle_private_message(char * message, struct client_info * ci)
     GString * response = g_string_new("User not found.\n");
     SSL_write(ci->ssl, response->str, response->len);
 
-    g_string_free(us->username, TRUE);
-    g_free(us);
-    g_string_free(user, TRUE);
-    g_string_free(msg, TRUE);
-    g_string_free(response, TRUE);
+    // g_string_free(us->username, TRUE);
+    // g_free(us);
+    // g_string_free(user, TRUE);
+    // g_string_free(msg, TRUE);
+    // g_string_free(response, TRUE);
 }
 
 void handle_login(char * buf, struct client_info * ci)
@@ -453,14 +475,19 @@ void handle_login(char * buf, struct client_info * ci)
     // Splitting the request string to access the user name and password fields
     char ** split_0 = g_strsplit(buf, "/user ", 0);
     if ( !split_0[1] ) {
+        g_strfreev(split_0);
         return;
     }
     char ** split_1 = g_strsplit(split_0[1], "/password ", 0);
     if ( !split_1[0] || !split_1[1] ) {
+        g_strfreev(split_0);
+        g_strfreev(split_1);
         return;
     }
     GString * username = g_string_new(g_strchomp(split_1[0]));
     GString * password = g_string_new(g_strchomp(split_1[1]));
+    g_strfreev(split_0);
+    g_strfreev(split_1);
 
     // Hash the password string from the user
     char hash_p[4096], salt[4096];
@@ -469,11 +496,11 @@ void handle_login(char * buf, struct client_info * ci)
     strcat(salt, password->str);
     sha256(salt, hash_p);
 
-    g_string_free(password, TRUE);
+    // g_string_free(password, TRUE);
 
     // Find a active user with the same user name
     struct username_search * us = g_new0(struct username_search, 1);
-    us->username = username;
+    us->username = g_string_new(username->str);
     g_tree_foreach(client_tree, find_user_by_username, us);
     g_string_free(us->username, TRUE);
     g_free(us);
@@ -481,12 +508,16 @@ void handle_login(char * buf, struct client_info * ci)
     // Check if there is no other user with the given username logged on
     if ( us->key == NULL ) {
         // Check if we find the username in the password file and the passwords match
+        gchar *passwd_attempt = g_base64_encode((const guchar *)hash_p, strlen(hash_p));
+        gchar *passwd_file = NULL;
         // Load the key file
         GKeyFile * keyfile = g_key_file_new();
-        g_key_file_load_from_file(keyfile, PASSWORDS_FILE, G_KEY_FILE_NONE, NULL);
-        gchar *passwd_attempt = g_base64_encode((const guchar *)hash_p, strlen(hash_p));
-        gchar *passwd_file = g_key_file_get_string(keyfile, "passwords", username->str, NULL);
-
+        if ( g_key_file_load_from_file(keyfile, PASSWORDS_FILE, G_KEY_FILE_NONE, NULL) != TRUE ) {
+            printf("Key file not loaded\n");
+        } else {
+            printf("Key file loaded\n");
+            passwd_file = g_key_file_get_string(keyfile, "passwords", username->str, NULL);
+        }
         printf("attempt: '%s'\n", passwd_attempt);
         printf("file   : '%s'\n", passwd_file);
 
@@ -494,6 +525,7 @@ void handle_login(char * buf, struct client_info * ci)
         if ( passwd_file == NULL ) {
             // Insert the hashed password to the password file
             g_key_file_set_string(keyfile, "passwords", username->str, passwd_attempt);
+            printf("key file suckkar\n");
             gsize length;
             gchar *keyfile_string = g_key_file_to_data(keyfile, &length, NULL);
             FILE *f = fopen(PASSWORDS_FILE, "a");
@@ -505,7 +537,7 @@ void handle_login(char * buf, struct client_info * ci)
             // Update the client properies
             ci->authentication_tries = 0;
             ci->authenticated = TRUE;
-            ci->username = username;
+            ci->username = g_string_new(username->str);
             GString * message = g_string_new("New user create successfully");
             SSL_write(ci->ssl, message->str, message->len);
             // Log to file
@@ -518,7 +550,7 @@ void handle_login(char * buf, struct client_info * ci)
         } else if ( g_strcmp0(passwd_attempt, passwd_file) == 0 ) {
             ci->authentication_tries = 0;
             ci->authenticated = TRUE;
-            ci->username = username;
+            ci->username = g_string_new(username->str);
             GString * message = g_string_new("Authentication successfull");
             SSL_write(ci->ssl, message->str, message->len);
             // Log to file
@@ -545,9 +577,9 @@ void handle_login(char * buf, struct client_info * ci)
             } 
             g_string_free(message, TRUE);
         }
-        g_key_file_free(keyfile);
         g_free(passwd_attempt);
         g_free(passwd_file);
+        g_key_file_free(keyfile);
         
         // There was some user found with the same username
     } else {
@@ -557,9 +589,7 @@ void handle_login(char * buf, struct client_info * ci)
         g_string_free(message, TRUE);
     }
     g_string_free(username, TRUE);
-    g_string_free(username, TRUE);
-    g_strfreev(split_0);
-    g_strfreev(split_1);
+    g_string_free(password, TRUE);
 }
 
 /*
@@ -571,9 +601,15 @@ void handle_login(char * buf, struct client_info * ci)
  */ 
 void change_nick_name(char * nick, struct client_info * ci)
 {
-    ci->nickname = g_string_new(nick);
+    GString * g_nick = g_string_new(nick);
     char * nickappend = " (nick)";
-    ci->nickname = g_string_append(ci->nickname, nickappend);
+    g_nick = g_string_append(g_nick, nickappend);
+    if ( ci->nickname ) {
+        ci->nickname = g_string_assign(ci->nickname, g_nick->str);    
+    } else {
+        ci->nickname = g_string_new(g_nick->str);
+    }
+    g_string_free(g_nick, TRUE);
     printf("Nick name: %s\n", ci->nickname->str);
 }
 
@@ -686,6 +722,7 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
                 }
             }
             // Close the connection to the user
+            printf("test\n");
             close_connection(ci);
             char * log_info = "disconnected";
             log_to_file(ci->socket, NULL, log_info);
@@ -733,7 +770,7 @@ gboolean free_chat_tree(gpointer key, gpointer value, gpointer data){
     GList *next;
     while(userList != NULL){
         next = userList->next;
-        free(userList->data);
+        // free(userList->data);
         room->users = g_list_delete_link(room->users, userList);
         userList = next;
     }
@@ -745,18 +782,19 @@ gboolean free_user_tree(gpointer key, gpointer value, gpointer data){
     UNUSED(key);
     UNUSED(data);
     struct client_info * ci = value;
-    free(ci);
+    // free(ci);
     return FALSE;
 }
 
 void client_tree_key_destroy(gpointer data){
-    struct sockaddr_in * sock = (struct sockaddr_in *) data;
-    g_free(sock);
+    printf("Client tree key test1\n");
+    // struct sockaddr_in * sock = (struct sockaddr_in *) data;
+    // g_free(sock);
 }
 
 void chat_room_tree_key_destroy(gpointer data){
-    char * room = (char *) data;
-    g_free(room);
+    // char * room = (char *) data;
+    // g_free(room);
 }
 //test 
 void chat_room_tree_value_destroy(gpointer data){
@@ -765,15 +803,16 @@ void chat_room_tree_value_destroy(gpointer data){
     while(rooms != NULL){
         GList* next_room = rooms->next;
         struct sockaddr_in * sock = (struct sockaddr_in *) rooms->data;
-        g_free(sock);
+        // g_free(sock);
         room->users = g_list_delete_link(room->users, rooms);
         rooms = next_room;
     }
-    g_list_free(room->users);
+    // g_list_free(room->users);
     g_free(room);
 }
 
 void client_tree_value_destroy(gpointer data){
+    printf("Client tree value test1\n");
     struct client_info* ci = (struct client_info *) data;
     SSL_shutdown(ci->ssl);
     close(ci->connfd);
@@ -785,8 +824,9 @@ void client_tree_value_destroy(gpointer data){
 
 void sigint_handler(int sig){
     UNUSED(sig);    
-    g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
-    g_tree_foreach(client_tree, free_user_tree, NULL);
+    printf("SIGINT HANDLER\n");
+    // g_tree_foreach(chat_room_tree, free_chat_tree, NULL);
+    // g_tree_foreach(client_tree, free_user_tree, NULL);
 
     g_tree_destroy(chat_room_tree);
     g_tree_destroy(client_tree);
