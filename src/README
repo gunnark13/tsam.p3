@@ -20,4 +20,11 @@ The server doesn't know the password of it's clients.
 ## Private messages questions
 ---
 ### Should private messages be logged?
-Not while we don't have a good method to store and retrieve the messages. The perks of our decision is that messages are not rechable for unauthorized malicious clients. The downside to our decision is that the client has no backup for his private message history. 
+Not while we don't have a good method to store and retrieve the messages. The perks of our decision is that messages are not rechable for unauthorized malicious clients. The downside to our decision is that the client has no backup for his private message history.
+
+## Changing nickname as a user
+---
+Users can use the command /nick [nickname] to change their nickname.
+When a user sends a message to a chat room or a specific user the nickname is displayed to the others users with a flag
+showing that this is not there real username. We decided to do this so a user cant change his nickname to someone elses username and pose 
+as that user. 
