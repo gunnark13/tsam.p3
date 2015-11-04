@@ -35,6 +35,8 @@
 #define PRIVATE_KEY_FILE "fd.key"
 #define CA_PEM "ca.pem"
 
+#define UNUSED(X) (void)(x)
+
 /* This variable is 1 while the client is active and becomes 0 after
    a quit command to terminate the client and to clean up the
    connection. */
@@ -115,6 +117,10 @@ void sha256(char *string, char outputBuffer[65])
 void sigint_handler(int signum) {
     active = 0;
 
+    if ( signum ) {
+        printf("bye");
+    }
+
     /* We should not use printf inside of signal handlers, this is not
      * considered safe. We may, however, use write() and fsync(). */
     write(STDOUT_FILENO, "Terminated.\n", 12);
@@ -133,12 +139,12 @@ static SSL *server_ssl;
 /* This variable shall point to the name of the user. The initial value
    is NULL. Set this variable to the username once the user managed to be
    authenticated. */
-static char *user;
+// static char *user;
 
 /* This variable shall point to the name of the chatroom. The initial
    value is NULL (not member of a chat room). Set this variable whenever
    the user changed the chat room successfully. */
-static char *chatroom;
+// static char *chatroom;
 
 /* This prompt is used by the readline library to ask the user for
  * input. It is good style to indicate the name of the user and the
@@ -164,7 +170,7 @@ void readline_callback(char *line)
     }
     if ((strncmp("/bye", line, 4) == 0) ||
             (strncmp("/quit", line, 5) == 0)) {
-        
+
         printf("Now exiting...\n");
 
         rl_callback_handler_remove();
@@ -252,8 +258,8 @@ void readline_callback(char *line)
             rl_redisplay();
             return;
         }
-        char *receiver = strndup(&(line[i]), j - i - 1);
-        char *message = strndup(&(line[j]), j - i - 1);
+        // char *receiver = strndup(&(line[i]), j - i - 1);
+        // char *message = strndup(&(line[j]), j - i - 1);
 
         snprintf(buffer, 255, "%s\n", line);
         /* Send private message to receiver. */
@@ -278,9 +284,6 @@ void readline_callback(char *line)
         char passwd[48];
         getpasswd("Password: ", passwd, 48);
 
-        /* Process and send this information to the server. */
-        printf("User: %s\nPassword: %s\n", new_user, passwd);
-        
         // Append the password to the salt string
         char salt_and_pass[4096];
         memset(&salt_and_pass, 0, sizeof(salt_and_pass));
@@ -289,16 +292,14 @@ void readline_callback(char *line)
 
         char a[4096];
         memset(&a, '\0', sizeof(a));
-        
+
         sha256(salt_and_pass, a);
-        printf("Salt and pass  : '%s'\n", salt_and_pass); 
-        printf("Hashed_password: '%s'\n", a);
-        
+
         GString * message = g_string_new("/user ");
         message = g_string_append(message, new_user);
         message = g_string_append(message, "\n/password ");
         message = g_string_append(message, a);
-        
+
         snprintf(buffer, 255, "%s\n", message->str);
         int err = SSL_write(server_ssl, buffer, sizeof(buffer));
         if ( err == -1 ) {
@@ -417,7 +418,7 @@ int main(int argc, char **argv)
         printf("Error : ssl_new\n");
         exit(1);
     }
-    
+
     int j = 0;
     printf("%d\n", j++);
 
@@ -478,7 +479,7 @@ int main(int argc, char **argv)
         printf("Error SSL_read\n");
         exit(1);
     }
-    
+
     buf[err] = '\0';
     printf("%s\n", buf);
 

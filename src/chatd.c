@@ -35,6 +35,8 @@
 #define TIMED_OUT "timed out"
 #define WELCOME "Welcome"
 
+#define TIMEOUT_SEC 120
+
 #define PASSWORDS_FILE "passwords.ini"
 #define CERTIFICATE_FILE "fd.crt"
 #define PRIVATE_KEY_FILE "fd.key"
@@ -712,7 +714,7 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     struct client_info * ci = value;
     time_t now;
     int client_connection_sec = (int) difftime(time(&now), ci->time);
-    if ( client_connection_sec >= 15 ) {
+    if ( client_connection_sec >= TIMEOUT_SEC ) {
         GString * message = g_string_new("Timeout. Closed the connection.\n");
         SSL_write(ci->ssl, message->str, message->len);
         if ( ci->username ) {
