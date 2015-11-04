@@ -165,7 +165,6 @@ int chat_room_cmp_search(const void * room_a, const void * room_b)
     const char * a = room_a;
     const char * b = room_b;
     int cmp = g_strcmp0(a, b);
-    printf("a:'%s' | b:'%s'  ==> %d\n", a, b, cmp); 
     if ( cmp == 0 ) {
         return 0;
     } else if ( cmp > 0 ) {
@@ -232,17 +231,11 @@ void close_connection(struct client_info * ci)
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if ( cr ) {
-            printf("List size 0 : '%d'\n", g_list_length(cr->users));
             cr->users = g_list_remove(cr->users, ci);
-            printf("List size 1 : '%d'\n", g_list_length(cr->users));
         }
     }
     // Remove the client from the client tree
-    if ( g_tree_remove(client_tree, &ci->socket) == TRUE ) {
-        printf("Removing client from tree\n");
-    } else {
-        printf("Client not found\n");
-    }
+    g_tree_remove(client_tree, &ci->socket);
 }
 
 /* This function logs an activity to the log file.
@@ -340,17 +333,12 @@ void join_chat_room(char * room_name, struct client_info * ci)
         return;
     } 
 
-    printf("cr->name: '%s'\n", cr->name);
-    printf("ci->room: '%s'\n", ci->room);
     // Remove user from his old room
-    if(ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
+    if (ci->room != NULL && strcmp(cr->name, ci->room) != 0) {
         // The client is already in a room, find that room "old_room".
         struct chat_room * old_room = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
-        if( old_room != NULL ) {
-            printf("removing user for his old room\n");
+        if ( old_room != NULL ) {
             old_room->users = g_list_remove(old_room->users, ci);
-        } else {
-            printf("Old room not found\n");
         }
     }
 
@@ -358,7 +346,6 @@ void join_chat_room(char * room_name, struct client_info * ci)
     ci->room = cr->name;
     if(g_list_find(cr->users, ci) == NULL) {
         // Add the client to his room unless he is there already.
-        printf("registering user in new room\n");
         cr->users = g_list_append(cr->users, ci);
     }
     // Write registration message to client.
@@ -389,8 +376,6 @@ void broadcast(char * buf, struct client_info * ci)
 {
     struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
     if ( cr != NULL ) {
-        printf("Broadcasting to %d users. Message : '%s'\n", g_list_length(cr->users),
-                buf);
         g_list_foreach(cr->users, write_to_client, buf);
     }
 }
@@ -408,7 +393,6 @@ gboolean find_user_by_username(gpointer key, gpointer value, gpointer data)
     if ( ci->username == NULL ) {
         return FALSE;
     }
-    printf("ci->user: '%s' | us->user : '%s' \n", ci->username->str, us->username->str);
     if ( g_strcmp0(ci->username->str, us->username->str) == 0 ) {
         us->key = key;
         return TRUE;
@@ -441,9 +425,6 @@ void handle_private_message(char * message, struct client_info * ci)
     GString * msg = g_string_new(g_strchomp(split_1[2]));
     g_strfreev(split);
     g_strfreev(split_1);
-    
-    printf("user : '%s'\n", user->str);
-    printf("msg : '%s'\n", msg->str);
 
     struct username_search * us = g_new0(struct username_search, 1);
     us->username = g_string_new(user->str);
@@ -502,7 +483,7 @@ void handle_login(char * buf, struct client_info * ci)
     strcat(salt, "DvoS8URnIP+2%ts%AeyLenlbin^cLxb%~vegmcNEDRvjOPSB4*ItTK0BVDMK");
     strcat(salt, password->str);
     sha256(salt, hash_p);
-    
+
     // Find a active user with the same user name
     struct username_search * us = g_new0(struct username_search, 1);
     us->username = g_string_new(username->str);
@@ -517,20 +498,14 @@ void handle_login(char * buf, struct client_info * ci)
         gchar *passwd_file = NULL;
         // Load the key file
         GKeyFile * keyfile = g_key_file_new();
-        if ( g_key_file_load_from_file(keyfile, PASSWORDS_FILE, G_KEY_FILE_NONE, NULL) != TRUE ) {
-            printf("Key file not loaded\n");
-        } else {
-            printf("Key file loaded\n");
+        if ( g_key_file_load_from_file(keyfile, PASSWORDS_FILE, G_KEY_FILE_NONE, NULL) == TRUE ) {
             passwd_file = g_key_file_get_string(keyfile, "passwords", username->str, NULL);
         }
-        printf("attempt: '%s'\n", passwd_attempt);
-        printf("file   : '%s'\n", passwd_file);
 
         // Check if the is no matching user
         if ( passwd_file == NULL ) {
             // Insert the hashed password to the password file
             g_key_file_set_string(keyfile, "passwords", username->str, passwd_attempt);
-            printf("key file suckkar\n");
             gsize length;
             gchar *keyfile_string = g_key_file_to_data(keyfile, &length, NULL);
             FILE *f = fopen(PASSWORDS_FILE, "a");
@@ -543,7 +518,7 @@ void handle_login(char * buf, struct client_info * ci)
             ci->authentication_tries = 0;
             ci->authenticated = TRUE;
             ci->username = g_string_new(username->str);
-            GString * message = g_string_new("New user create successfully");
+            GString * message = g_string_new("New user created successfully");
             SSL_write(ci->ssl, message->str, message->len);
             // Log to file
             log_to_file(ci->socket, ci->username->str, AUTHENTICATED);
@@ -564,7 +539,6 @@ void handle_login(char * buf, struct client_info * ci)
 
             // else: password is incorrect
         } else {
-            printf("Incorrect password\n");
             GString * message = g_string_new("Authentication failed.\n");
             SSL_write(ci->ssl, message->str, message->len); 
             ci->authentication_tries += 1;
@@ -572,7 +546,6 @@ void handle_login(char * buf, struct client_info * ci)
             log_to_file(ci->socket, username->str, AUTHENTICATION_ERROR);
             // Close the connection if the authentication tries exceed 3 times.
             if ( ci->authentication_tries >= 3 ) {
-                printf("To many login attempts\n");
                 message = g_string_append(message, "To many login attempts\n");
                 SSL_write(ci->ssl, message->str, message->len);
                 close_connection(ci);
@@ -583,10 +556,9 @@ void handle_login(char * buf, struct client_info * ci)
         g_free(passwd_attempt);
         g_free(passwd_file);
         g_key_file_free(keyfile);
-        
+
         // There was some user found with the same username
     } else {
-        printf("Already logged in from somewhere else.\n");
         GString * message = g_string_new("Already logged in from somewhere else.\n");
         SSL_write(ci->ssl, message->str, message->len);
         g_string_free(message, TRUE);
@@ -612,7 +584,6 @@ void change_nick_name(char * nick, struct client_info * ci)
         ci->nickname = g_string_new(g_nick->str);
     }
     g_string_free(g_nick, TRUE);
-    printf("Nick name: %s\n", ci->nickname->str);
 }
 
 /* This function checks for commands from the client, commands start with '/'
@@ -666,7 +637,6 @@ void check_command (char * buf, struct client_info * ci)
     }
 
     if ( starts_with("/say", buf) == TRUE ) {
-        printf("Inside /say\n");
         if ( ci->authenticated == FALSE ) {
             GString * message = g_string_new("Login to send private messages.\n");
             SSL_write(ci->ssl, message->str, message->len);
@@ -681,7 +651,6 @@ void check_command (char * buf, struct client_info * ci)
         // preappend the nick name, user name or 'anonymous' to the message
         GString * message = g_string_new(NULL);
         if ( ci->nickname ) {
-            printf("appending nickname to message : '%s'\n", ci->nickname->str);
             message = g_string_append(message, ci->nickname->str);
         } else if ( ci->username ) {
             message = g_string_append(message, ci->username->str);
@@ -711,14 +680,11 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
         char buf[4096];
         int err = SSL_read(ci->ssl, buf, sizeof(buf) - 1);
         if ( err <= 0 ) {
-            printf("Error: SSL_read, disconnecting client\n");
-
             // Remove user from chat room
             if ( ci->room ) {
                 struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, 
                         ci->room);
                 if ( cr != NULL ) {
-                    printf("Removeing user from room.\n");
                     cr->users = g_list_remove(cr->users, cr);
                 }
             }
@@ -727,7 +693,6 @@ gboolean read_from_client(gpointer key, gpointer value, gpointer data)
             log_to_file(ci->socket, NULL, DISCONNECTED);
         } else {
             buf[err] = '\0';
-            printf("Received %d chars:'%s'\n", err, buf);
             time_t now;
             ci->time = time(&now); // update the last active time
             check_command(buf, ci);
@@ -748,14 +713,11 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     time_t now;
     int client_connection_sec = (int) difftime(time(&now), ci->time);
     if ( client_connection_sec >= 15 ) {
-        printf("Timout, client_port : %d\n", ci->socket.sin_port);
         GString * message = g_string_new("Timeout. Closed the connection.\n");
         SSL_write(ci->ssl, message->str, message->len);
         if ( ci->username ) {
-            printf("user name\n");
             log_to_file(ci->socket, ci->username->str, TIMED_OUT);
         } else {
-            printf("no user name\n");
             log_to_file(ci->socket, NULL, TIMED_OUT);
         }
         close_connection(ci);
@@ -865,9 +827,6 @@ int main(int argc, char **argv)
     } 
     int highestConnfd = sockfd;
 
-    printf("Sockfd : %d\n", sockfd);
-    printf("Port : %d\n", my_port);
-
     memset(&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     /* Network functions need arguments in network byte order instead of
@@ -897,7 +856,6 @@ int main(int argc, char **argv)
     g_tree_insert(chat_room_tree, room1->name, room1);
     g_tree_insert(chat_room_tree, room2->name, room2);
     g_tree_insert(chat_room_tree, room3->name, room3);
-    printf("Number of rooms : %d\n", g_tree_nnodes(chat_room_tree));
 
     for (;;) {
         fd_set rfds;
@@ -910,9 +868,6 @@ int main(int argc, char **argv)
         FD_SET(sockfd, &rfds);
 
         g_tree_foreach(client_tree, set_highest_connfd, &highestConnfd);
-
-        printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
-
         g_tree_foreach(client_tree, set_file_descriptor, &rfds); 
 
         /* Wait for five seconds. */
@@ -928,9 +883,6 @@ int main(int argc, char **argv)
                 socklen_t len = (socklen_t) sizeof(client);
                 /* For TCP connectios, we first have to accept. */
                 int connfd = accept(sockfd, (struct sockaddr *) &client, &len);
-
-                printf("Connection from %s, port %d\n", inet_ntoa(client.sin_addr), 
-                        ntohs(client.sin_port));
 
                 SSL *ssl = SSL_new(ssl_ctx);
                 if ( !ssl ) {
@@ -956,7 +908,6 @@ int main(int argc, char **argv)
                             printf("Error: SSL_write\n");
                         } else {
                             g_tree_insert(client_tree, &ci->socket, ci);
-                            printf("Number of nodes : %d\n", g_tree_nnodes(client_tree));
                             log_to_file(client, NULL, CONNECTED);
                         }
                     }
