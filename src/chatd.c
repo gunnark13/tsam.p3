@@ -232,11 +232,17 @@ void close_connection(struct client_info * ci)
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
         if ( cr ) {
-            cr->users = g_list_remove(cr->users, cr);
+            printf("List size 0 : '%d'\n", g_list_length(cr->users));
+            cr->users = g_list_remove(cr->users, ci);
+            printf("List size 1 : '%d'\n", g_list_length(cr->users));
         }
     }
     // Remove the client from the client tree
-    g_tree_remove(client_tree, &ci->socket);
+    if ( g_tree_remove(client_tree, &ci->socket) == TRUE ) {
+        printf("Removing client from tree\n");
+    } else {
+        printf("Client not found\n");
+    }
 }
 
 /* This function logs an activity to the log file.
