@@ -228,8 +228,6 @@ gboolean set_file_descriptor(gpointer key, gpointer value, gpointer data)
  */ 
 void close_connection(struct client_info * ci) 
 {
-    ci->authenticated = FALSE;
-    ci->authentication_tries = 0;
     if ( ci->room ) {
         // Find the client's room 
         struct chat_room * cr = g_tree_search(chat_room_tree, chat_room_cmp_search, ci->room);
@@ -745,14 +743,17 @@ gboolean timeout_client(gpointer key, gpointer value, gpointer data)
     int client_connection_sec = (int) difftime(time(&now), ci->time);
     if ( client_connection_sec >= 15 ) {
         printf("Timout, client_port : %d\n", ci->socket.sin_port);
-        int err = SSL_shutdown(ci->ssl);
-        if (err == -1 ) {
-            printf("Error shuting down ssl!\n");
+        GString * message = g_string_new("Timeout. Closed the connection.\n");
+        SSL_write(ci->ssl, message->str, message->len);
+        if ( ci->username ) {
+            printf("user name\n");
+            log_to_file(ci->socket, ci->username->str, TIMED_OUT);
+        } else {
+            printf("no user name\n");
+            log_to_file(ci->socket, NULL, TIMED_OUT);
         }
         close_connection(ci);
-        char * log_info = "timed out.";
-        log_to_file(ci->socket, NULL, log_info);
-        g_tree_remove(client_tree, key); 
+        g_string_free(message, TRUE);
     }
     return FALSE;
 }
@@ -956,10 +957,10 @@ int main(int argc, char **argv)
                 }
             }
             g_tree_foreach(client_tree, read_from_client, &rfds);
-            // g_tree_foreach(client_tree, timeout_client, &rfds);
         } else {
             fprintf(stdout, "No message in five seconds.\n");
             fflush(stdout);
         }
+        g_tree_foreach(client_tree, timeout_client, &rfds);
     }
 }
